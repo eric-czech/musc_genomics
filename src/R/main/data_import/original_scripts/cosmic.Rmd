@@ -1,0 +1,119 @@
+---
+title: "Linking_COSMIC_Drug_Sensitivity_With_Genomics_Data"
+author: "Stephen Guest"
+date: "Thursday, October 29, 2015"
+output: html_document
+---
+The goal of this R script is to download drug sensitivity data from the COSMIC data portal.  This data contains drug sensitivity information for a large number of cell lines from the the Cancer Cell Line Encyclopedia (CCLE).  After downloading, this data is then merged with genomic data sets for the mataching CCLE cell lines.  The genomic data for the CCLE cell lines was obtained from the TCGA database using a separate R script called, "Extracting_Genomic_Data_From_TCGA".   
+
+This block of code downloads raw drug sensitivity data from the COSMIC database and then processes it in order to pull out only the drug IC50 data and put it in a tidy format.  
+
+```{r}
+download.file("ftp://ftp.sanger.ac.uk/pub/project/cancerrxgene/releases/release-5.0/gdsc_manova_input_w5.csv","COSMIC_Drug_Data.csv")
+drugs<-read.csv("COSMIC_Drug_Data.csv", header=T, stringsAsFactors=F)
+drugs <- drugs[6:712,]
+drugs <- drugs[,c(1,76:2035)]
+drugs <- drugs[,1:141]
+drugs[2:141] <- sapply(drugs[2:141],as.numeric)
+```
+
+This block of code removes '-'s from the Cell.Line column and removes '_IC_50' from the column names.  Finally, it removes only the data for Navitoclax (aka ABT.263) and assigns this data to a new variable called Nav.
+
+```{r}
+drugs$Cell.Line <- gsub("-", "", drugs$Cell.Line)
+names(drugs) <- gsub("_IC_50", "", names(drugs))
+Nav<-drugs[,c(1,which(names(drugs) == "ABT.263"))]
+```
+
+This block of code reads in the Copy Number data file from my local directory
+
+```{r}
+setwd("C:/Users/stg43/R_Programming/CCLE_Genomic_Data_Sets")
+Copy_Number <- read.csv("CCLE_All_Copy_Number_Data_TCGA.csv",header=T)
+names(Copy_Number)[1] <- "Cell.Line"
+```
+
+This block of code merges the Copy Number genomic data with the Navitoclax drug sensitivity data based on cell line.  It then creates a z-score for the drug sensitivity values and rearranges the columns of the dataframe.  Finally, it removes rows for any cell line that doesn't have a sensitivity measurement for Navitoclax 
+
+```{r}
+Nav_Copy_Number <- merge(Nav, Copy_Number, by = "Cell.Line")
+Nav_Copy_Number$Scaled <- scale(Nav_Copy_Number$ABT.263, center=T, scale=T)
+Nav_Copy_Number<-Nav_Copy_Number[,c(1:2, 21523,3:21522)]
+Nav_Copy_Number <- Nav_Copy_Number[!is.na(Nav_Copy_Number$ABT.263),]
+```
+
+The next series of code blocks repeat the steps described above using the remaining genomic data sets i.e. Expression data, Mutation data, and Log2ratios data.  
+
+```{r}
+Exp <- read.csv("CCLE_All__Exp_Data_TCGA.csv",header=T)
+names(Exp)[1] <- "Cell.Line"
+```
+
+```{r}
+Nav_Exp <- merge(Nav, Exp, by = "Cell.Line")
+Nav_Exp$Scaled <- scale(Nav_Exp$ABT.263, center=T, scale=T)
+Nav_Exp <- Nav_Exp[,c(1:2, 16062,3:16061)]
+Nav_Exp <- Nav_Exp[!is.na(Nav_Exp$ABT.263),]
+```
+
+```{r}
+Mut <- read.csv("CCLE_All__Mut_Data_TCGA.csv",header=T)
+names(Mut)[1] <- "Cell.Line"
+```
+
+```{r}
+Nav_Mut <- merge(Nav, Mut, by = "Cell.Line")
+Nav_Mut$Scaled <- scale(Nav_Mut$ABT.263, center=T, scale=T)
+Nav_Mut <- Nav_Mut[,c(1:2, 2174,3:2173)]
+Nav_Mut <- Nav_Mut[!is.na(Nav_Mut$ABT.263),]
+```
+
+```{r}
+Log2_CN <- read.csv("CCLE_All_Log2ratios_TCGA.csv",header=T)
+names(Log2_CN)[1] <- "Cell.Line"
+```
+
+```{r}
+Nav_Log2_CN <- merge(Nav, Log2_CN, by = "Cell.Line")
+Nav_Log2_CN$Scaled <- scale(Nav_Log2_CN$ABT.263, center=T, scale=T)
+Nav_Log2_CN <- Nav_Log2_CN[,c(1:2, 20420,3:20419)]
+Nav_Log2_CN <- Nav_Log2_CN[!is.na(Nav_Log2_CN$ABT.263),]
+```
+
+Changing some of the column names of the dataframes
+
+```{r}
+names(Nav_Copy_Number)[1] <- "tumorID"
+names(Nav_Copy_Number)[2] <- "IC50"
+names(Nav_Copy_Number)[3] <- "Z_score"
+names(Nav_Exp)[1] <- "tumorID"
+names(Nav_Exp)[2] <- "IC50"
+names(Nav_Exp)[3] <- "Z_score"
+names(Nav_Mut)[1] <- "tumorID"
+names(Nav_Mut)[2] <- "IC50"
+names(Nav_Mut)[3] <- "Z_score"
+names(Nav_Log2_CN)[1] <- "tumorID"
+names(Nav_Log2_CN)[2] <- "IC50"
+names(Nav_Log2_CN)[3] <- "Z_score"
+```
+
+removing rows in each dataframe for cell lines that aren't present in all four data sets. This should result in each dataframe having the same number of rows and they should all have matches across all of the dataframes.
+
+```{r}
+x <- setdiff(Nav_Copy_Number$tumorID, Nav_Mut$tumorID)
+Nav_Copy_Number <- Nav_Copy_Number[!Nav_Copy_Number$tumorID %in% x,]
+x <- setdiff(Nav_Exp$tumorID, Nav_Mut$tumorID)
+Nav_Exp <- Nav_Exp[!Nav_Exp$tumorID %in% x,]
+x <- setdiff(Nav_Log2_CN$tumorID, Nav_Mut$tumorID)
+Nav_Log2_CN <- Nav_Log2_CN[!Nav_Log2_CN$tumorID %in% x,]
+```
+
+Writing files to one of my directories
+
+```{r}
+setwd("C:/Users/stg43/R_Programming/COSMIC_Genomics_of_Drug_Sensitivity")
+write.csv(Nav_Copy_Number, file="COSMIC_copy_number.csv", row.names=F)
+write.csv(Nav_Exp, file="COSMIC_gene_expression.csv", row.names=F)
+write.csv(Nav_Mut, file="COSMIC_mutations.csv", row.names=F)
+write.csv(Nav_Log2_CN, file="COSMIC_copy_number_log2ratios.csv", row.names=F)
+```

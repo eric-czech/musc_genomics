@@ -1,0 +1,42 @@
+---
+title: "Cancer_Genomics_Data_Challenge"
+author: "Stephen Guest"
+date: "Friday, August 21, 2015"
+output: html_document
+---
+
+I am attempting to put together a 'data challenge' for the Charleston Data Analyticis group.  My idea is to assemble genomics data for a group of cell lines that have been treated with Navitoclax and an IC50 value determined.  I will then provide the group with the genomics data and the IC50 value for each cell line and ask them to develop a classifier that could predict the IC50 value for a new cell line given the genomics data for that cell line
+
+In order to get navitoclax IC50 data I am first using the Broad Institute Cancer Therapeutics Data Portal at
+
+https://ctd2.nci.nih.gov/dataPortal/
+
+on 08/21/15 I downloaded the raw data for the "Identifying and Targeting Cancer Dependencies With Small Molecules" project.  The file of interest in this batch of files is:  Broad.CTD2.D3.area_under_conc_curve
+
+Note that on 12/18/15 I was unable to find this file in the above location.  There is however a new dataset available
+
+Reading in the data file from my local directory and pulling out only the data for navitoclax
+
+
+```{r}
+setwd("C:/Users/stg43/Charleston Data Analytics/Cancer Genomics Data Challenge")
+ctdp<-read.table("Broad.CTD2.D3.area_under_conc_curve.txt", sep="\t", header=T)
+nav<-ctdp[ctdp$compound_name=="navitoclax",]
+```
+
+Next we'll rename some of the nav dataframe columns and generate a z score for the response metric variable
+
+```{r}
+nav<-nav[,-2]
+names(nav)<-c("tumorID","response_metric_AUC")
+nav$Z_score<-scale(nav$response_metric_AUC, center=T, scale=T)
+```
+
+There are also some cell lines that appear more than once in the nav data sest.  I do not know why this is.  Perhaps different culture conditions?  Really don't know. Should probably investigate this further but in the interest of time I will delete the extra occurences of the duplicated cell lines
+
+```{r}
+x<-duplicated(nav$tumorID)
+nav<-nav[!x,]
+```
+
+This data can now be merged with the CCLE genomic data sets based on the tumorID variable
