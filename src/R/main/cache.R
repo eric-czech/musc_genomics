@@ -30,10 +30,14 @@ Fetch <- function(key, loader){
 
 DEFAULT_CACHE_PATH <- file.path('~', 'genomics_data_cache')
 
-FetchFromDisk <- function(filename, loader, dir=DEFAULT_CACHE_PATH){
-  fpath <- file.path(dir, paste0(filename, '.Rdata'))
+GetCachePath <- function(filename, dir=DEFAULT_CACHE_PATH){
   if (!file.exists(dir))
     dir.create(dir)
+  file.path(dir, filename)
+}
+
+FetchFromDisk <- function(filename, loader, dir=DEFAULT_CACHE_PATH){
+  fpath <- GetCachePath(paste0(filename, '.Rdata'), dir)
   if (file.exists(fpath) && CacheEnabled()){
     env <- new.env()
     load(fpath, envir=env)

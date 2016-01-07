@@ -235,7 +235,7 @@ Getting rid of rows that contain only NAs
 Log2_CN_NA_Cols_Removed<-Log2_CN_NA_Cols_Removed[rowSums(is.na(Log2_CN_NA_Cols_Removed)) != ncol(Log2_CN_NA_Cols_Removed),]
 ```
 
-writing the file to the GitHub repository 
+writing the file to the GitHub repository
 
 ```{r}
 write.csv(Log2_CN_NA_Cols_Removed, file="CCLE_All_Log2ratios_TCGA.csv")

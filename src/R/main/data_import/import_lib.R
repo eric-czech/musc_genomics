@@ -43,6 +43,7 @@ GEN_PROF_COPY_NUMBER <- 'cellline_ccle_broad_log2CNA'
 GEN_PROF_GENE_EXPRESSION <- 'cellline_ccle_broad_mrna_median_Zscores'
 GEN_PROF_MUTATION <- 'cellline_ccle_broad_mutations'
 
+
 GetBioPortalData <- function(gene.symbols, genetic.profile, chunk.size=50){
   #' Returns cBioPortal data for the given genetic profile
   #' 
@@ -52,25 +53,106 @@ GetBioPortalData <- function(gene.symbols, genetic.profile, chunk.size=50){
   cgds <- GetCGDS()  
   loader <- function(){
     # Split the gene symbol list into chunks of size no greater than #chunk.size
-    gene.partitions <- split(gene.symbols, ceiling(seq_along(gene.symbols)/CHUNK_SIZE))
+    gene.partitions <- split(gene.symbols, ceiling(seq_along(gene.symbols)/chunk.size))
+    
+    # Utility function used to convert factor data into character data
+    # with one minor provision for when a factor has a 'NaN' level (not NA); 
+    # this seems to happen only for cell lines with at least one present mutation
+    to.char <- function(x) {
+      if (is.factor(x)) {
+        r <- as.character(x) 
+        ifelse(tolower(r) == 'nan', NA, r)
+      } else x
+    }
     
     # Fetch CCLE data for the given #genetic.profile, for each chunk
     temp.chunks <- gene.partitions[1:5] # TODO: Remove this limit later
     data <- foreach(genes=temp.chunks)%do%{
-      getProfileData(cgds, genes, genetic.profile, "cellline_ccle_broad_all") 
+      getProfileData(cgds, genes, genetic.profile, "cellline_ccle_broad_all") %>%
+        add_rownames(var='tumor_id') %>% mutate_each(funs(to.char)) 
     }
     
-    # Verify that row names from each chunk are equivalent.  This is necessary to
-    # make sure that non only does the data for each chunk have the same dimensions
-    # but also that the row names (tumor IDs) are sorted in the same order
-    rows.equal <- Reduce(function(d1, d2) all(row.names(d1) == row.names(d2)), data)
-    if (!rows.equal) stop('Data for some chunks of genes returned differing row names')
     
-    # Combine all data chunks into a single data frame
-    foreach(d=data, .combine=cbind) %do% d
+    # Verify that tumor IDs from each chunk are equivalent.  This is necessary to
+    # make sure that non only does the data for each chunk have the same dimensions
+    # but also that the tumor IDs are sorted in the same order
+    ids.equal <- foreach(i=1:(length(data)-1), .combine=c) %do% {
+      all.equal(data[[i]]$tumor_id, data[[i+1]]$tumor_id)
+    } %>% all
+    if (!ids.equal) stop('Data for some chunks of genes returned differing tumor ids')
+    
+    # Combine all data chunks into a single data frame and remove NA-only columns
+    tumor.ids <- data[[1]]$tumor_id
+    (foreach(d=data, .combine=cbind) %do% {d %>% select(-tumor_id)}) %>% 
+      Filter(function(x)!all(is.na(x)), .) %>%
+      mutate(tumor_id=tumor.ids)
   }
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
-  FetchFromDisk(genetic.profile, loader)
+  FetchFromDisk(genetic.profile, loader) 
 }
 
+
+#------------------------------#
+# CTD2 Constants and Functions #
+#------------------------------#
+
+CTD2_URL <- 'ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv2.0_2015_ctd2_ExpandedDataset/CTRPv2.0_2015_ctd2_ExpandedDataset.zip'  
+
+GetCTD2Data <- function(){
+  loader <- function(){
+    file.path <- GetCachePath('ctd2_v2_expanded_dataset.zip')
+    if (!file.exists(file.path))
+      download.file(CTD2_URL, file.path, mode="wb")
+    
+    # Load raw AUC data for experiments
+    d.auc <- read.csv(unz(file.path, 'v20.data.curves_post_qc.txt'), sep='\t', stringsAsFactors=F) %>%
+      select(area_under_curve, master_cpd_id, experiment_id)
+    
+    # Load compound/drug meta data
+    d.cmpd <- read.csv(unz(file.path, 'v20.meta.per_compound.txt'), sep='\t', stringsAsFactors=F) %>%
+      select(cpd_name, master_cpd_id)
+    
+    # Load experiment meta data (note that some of these records are duplicated in full -- no idea why)
+    # * Example experiment with duplicates = 85
+    d.exp <- read.csv(unz(file.path, 'v20.meta.per_experiment.txt'), sep='\t', stringsAsFactors=F) %>%
+      select(experiment_id, master_ccl_id) %>%
+      group_by(experiment_id) %>% do({.[1,]}) %>% ungroup
+    
+    # Load cell line meta data
+    d.cline <- read.csv(unz(file.path, 'v20.meta.per_cell_line.txt'), sep='\t', stringsAsFactors=F) %>%
+      select(master_ccl_id, ccl_name)
+    
+    # TODO: Find out if 'navitoclax' filter is appropriate or if it should be expanded to include these
+    # Navitoclax variants
+    #   [343] "navitoclax"                               "navitoclax:birinapant (1:1 mol/mol)"     
+    #   [345] "navitoclax:gemcitabine (1:1 mol/mol)"     "navitoclax:MST-312 (1:1 mol/mol)"        
+    #   [347] "navitoclax:piperlongumine (1:1 mol/mol)"  "navitoclax:pluripotin (1:1 mol/mol)"     
+    #   [349] "navitoclax:PLX-4032 (1:1 mol/mol)"        "navitoclax:sorafenib (1:1 mol/mol)"  
+    
+    # Join all datasets and select only relevant fields
+    d.ctd <- d.auc %>% 
+      inner_join(d.cmpd, by='master_cpd_id') %>%
+      inner_join(d.exp, by='experiment_id') %>%
+      inner_join(d.cline, by='master_ccl_id') %>%
+      filter(tolower(cpd_name) == 'navitoclax') %>%
+      #filter(str_detect(tolower(cpd_name), '^navitoclax')) %>%
+      select(tumor_id=ccl_name, cpd_name, area_under_curve, experiment_id)
+    
+    # Verify that records at this point are unique to the cell line and experiment
+    # (this was previously a problem when experiment meta data records were repeated)
+    if (d.ctd %>% group_by(tumor_id, experiment_id) %>% tally %>% .$n %>% unique != 1)
+      stop('Found CTD2 record duplicates')
+    
+    # Plotting cell lines with multiple AUC values
+    # ids <- d.ctd %>% group_by(tumor_id) %>% tally %>% filter(n >= 2) %>% .$tumor_id %>% unique
+    # d.ctd %>% filter(tumor_id %in% ids) %>% ggplot(aes(x=tumor_id, y=area_under_curve)) + geom_point() + 
+    #    theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+    
+    d.ctd %>% group_by(tumor_id) %>% 
+      summarise(area_under_curve=mean(area_under_curve)) %>% ungroup
+  }
+  # Lazy-load these results (they're expensive to compute), saving them
+  # on disk or loading from disk if previously created
+  FetchFromDisk('ctd2_auc', loader) 
+}
