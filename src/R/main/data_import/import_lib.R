@@ -97,13 +97,15 @@ GetBioPortalData <- function(gene.symbols, genetic.profile, chunk.size=50){
 # CTD2 Constants and Functions #
 #------------------------------#
 
-CTD2_URL <- 'ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv2.0_2015_ctd2_ExpandedDataset/CTRPv2.0_2015_ctd2_ExpandedDataset.zip'  
+# Links found by browsing here: https://ctd2.nci.nih.gov/dataPortal/
+CTD2_V1_URL <- 'ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv1.0_2013_pub_Cell_154_1151/CTRPv1.0_2013_pub_Cell_154_1151.zip'  
+CTD2_V2_URL <- 'ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv2.0_2015_ctd2_ExpandedDataset/CTRPv2.0_2015_ctd2_ExpandedDataset.zip'  
 
-GetCTD2Data <- function(){
+GetCTD2V2Data <- function(){
   loader <- function(){
     file.path <- GetCachePath('ctd2_v2_expanded_dataset.zip')
     if (!file.exists(file.path))
-      download.file(CTD2_URL, file.path, mode="wb")
+      download.file(CTD2_V2_URL, file.path, mode="wb")
     
     # Load raw AUC data for experiments
     d.auc <- read.csv(unz(file.path, 'v20.data.curves_post_qc.txt'), sep='\t', stringsAsFactors=F) %>%
@@ -149,10 +151,29 @@ GetCTD2Data <- function(){
     # d.ctd %>% filter(tumor_id %in% ids) %>% ggplot(aes(x=tumor_id, y=area_under_curve)) + geom_point() + 
     #    theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
     
-    d.ctd %>% group_by(tumor_id) %>% 
+    d.ctd %>% 
+      mutate(tumor_id=toupper(str_trim(tumor_id))) %>%
+      group_by(tumor_id) %>% 
       summarise(area_under_curve=mean(area_under_curve)) %>% ungroup
+      
   }
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
-  FetchFromDisk('ctd2_auc', loader) 
+  FetchFromDisk('ctd2_auc_v2', loader) 
+}
+
+GetCTD2V1Data <- function(){
+  loader <- function(){
+    file.path <- GetCachePath('ctd2_v1_expanded_dataset.zip')
+    if (!file.exists(file.path))
+      download.file(CTD2_V1_URL, file.path, mode="wb")
+    read.csv(unz(file.path, 'v10.D3.area_under_conc_curve.txt'), sep='\t', stringsAsFactors=F) %>%
+      filter(str_detect(tolower(cpd_name), 'navitoclax')) %>% 
+      rename(tumor_id=ccl_name) %>% select(-cpd_name) %>%
+      mutate(tumor_id=toupper(str_trim(tumor_id))) %>%
+      group_by(tumor_id) %>% summarise(area_under_curve=mean(area_under_curve)) %>% ungroup
+  }
+  # Lazy-load these results (they're expensive to compute), saving them
+  # on disk or loading from disk if previously created
+  FetchFromDisk('ctd2_auc_v1', loader) 
 }

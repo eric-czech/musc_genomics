@@ -59,9 +59,11 @@ if (nrow(biop.data) != nrow(biop.cn))
 # Load CTD2 Data #
 #----------------#
 
-ctd2.data <- GetCTD2Data()
+ctd2.data <- GetCTD2V2Data()
 
 data <- biop.data %>% left_join(ctd2.data, by='tumor_id')
+
+
 
 #------------------#
 # Load COSMIC Data #

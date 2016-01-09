@@ -1,0 +1,64 @@
+---
+title: "CTD2 Versions"
+output: html_document
+---
+
+```{r, echo=F, message=FALSE, error=FALSE, warning=FALSE}
+library(stringr)
+library(tidyr)
+library(ggplot2)
+source('utils.R')
+source('data_import/import_lib.R')
+# dt %>% mutate_each(funs(is.na), starts_with('auc')) %>% 
+#   unite(auc, auc_v1, auc_v2) %>% .$auc %>% table
+```
+
+### Joining both datasets
+
+```{r, echo=T}
+d1 <- GetCTD2V1Data() %>% rename(auc_v1=area_under_curve) 
+d2 <- GetCTD2V2Data() %>% rename(auc_v2=area_under_curve)
+cbind(head(d1), head(d2))
+```
+
+```{r, echo=T}
+# Compute differences in AUC values
+dt <- d1 %>% full_join(d2, by='tumor_id') %>% mutate(diff_auc=auc_v1 - auc_v2)
+
+# Determine cell line IDs only in each dataset
+only.v1 <- subset(dt, is.na(auc_v2)) %>% .$tumor_id %>% unique %>% sort
+only.v2 <- subset(dt, is.na(auc_v1)) %>% .$tumor_id %>% unique %>% sort
+
+print(paste0('Number of records in joined dataset:', nrow(dt)))
+```
+
+### AUC Differences
+
+AUC values in V1 vs V2:
+```{r, warning=FALSE}
+dt %>% ggplot(aes(x=auc_v1, y=auc_v2)) + geom_point() + theme_bw() + 
+  xlab('V1 Value') + ylab('V2 Value')
+```
+
+AUC difference density and summary:
+```{r, warning=FALSE}
+summary(dt$diff_auc)
+dt %>% ggplot(aes(x=diff_auc)) + geom_density() + theme_bw()
+```
+
+### Version One Data
+
+```{r, echo=F}
+print(paste0('Number of Cell Lines only in V1 data: ', length(only.v1)))
+print('Cell Lines only in V1 data:')
+only.v1
+```
+
+### Version Two Data
+
+```{r, echo=F}
+print(paste0('Number of Cell Lines only in V2 data: ', length(only.v2)))
+print('Cell Lines only in V2 data:')
+only.v2
+```
+
