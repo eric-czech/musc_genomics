@@ -55,6 +55,8 @@ if (window.hljs && document.readyState && document.readyState === "complete") {
 </div>
 
 
+<p>The AUC file I used for the V1 data was <code>v10.D3.area_under_conc_curve.txt</code> and it came from this zip archive: <a href="ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv1.0_2013_pub_Cell_154_1151/CTRPv1.0_2013_pub_Cell_154_1151.zip">CTRPv1.0_2013_pub_Cell_154_1151.zip</a></p>
+<p>The AUC file I used for the V2 data was <code>v20.data.curves_post_qc.txt</code> (joined with several meta data files) and it came from this zip archive: <a href="ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv2.0_2015_ctd2_ExpandedDataset/CTRPv2.0_2015_ctd2_ExpandedDataset.zip">CTRPv2.0_2015_ctd2_ExpandedDataset.zip</a></p>
 <div id="joining-both-datasets" class="section level3">
 <h3>Joining both datasets</h3>
 <pre class="r"><code>d1 &lt;- GetCTD2V1Data() %&gt;% rename(auc_v1=area_under_curve) 

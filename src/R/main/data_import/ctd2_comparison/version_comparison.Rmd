@@ -3,10 +3,16 @@ title: "CTD2 Versions"
 output: html_document
 ---
 
+The AUC file I used for the V1 data was ```v10.D3.area_under_conc_curve.txt``` and it came from this zip archive: [CTRPv1.0_2013_pub_Cell_154_1151.zip](ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv1.0_2013_pub_Cell_154_1151/CTRPv1.0_2013_pub_Cell_154_1151.zip)
+
+The AUC file I used for the V2 data was ```v20.data.curves_post_qc.txt``` (joined with several meta data files) and it came from this zip archive: [CTRPv2.0_2015_ctd2_ExpandedDataset.zip](ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv2.0_2015_ctd2_ExpandedDataset/CTRPv2.0_2015_ctd2_ExpandedDataset.zip)
+
+
 ```{r, echo=F, message=FALSE, error=FALSE, warning=FALSE}
 library(stringr)
 library(tidyr)
 library(ggplot2)
+setwd('~/repos/musc_genomics/src/R/main')
 source('utils.R')
 source('data_import/import_lib.R')
 # dt %>% mutate_each(funs(is.na), starts_with('auc')) %>% 
