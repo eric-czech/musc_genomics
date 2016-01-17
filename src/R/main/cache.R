@@ -5,7 +5,8 @@
 #' 
 #' @author eczech
 #'-----------------------------------------------------------------------------
-source('utils.R')
+library(devtools)
+source_url('https://cdn.rawgit.com/eric-czech/portfolio/master/demonstrative/R/common/utils.R')
 
 DATA_CACHE <- list()
 

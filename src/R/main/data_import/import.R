@@ -6,11 +6,14 @@
 #' 
 #' @author eczech
 #'-----------------------------------------------------------------------------
-source('utils.R')
+library(devtools)
+source_url('https://cdn.rawgit.com/eric-czech/portfolio/master/demonstrative/R/common/utils.R')
 source('data_import/import_lib.R')
 lib('cgdsr')
 lib('foreach')
 lib('dplyr')
+lib('iterators')
+lib('reshape2')
 
 # options(enable.cache=T)
 # options(enable.cache=F)
@@ -19,56 +22,59 @@ lib('dplyr')
 # Load cBioPortal CCLE Data #
 #---------------------------#
 
-# Function used to put CCLE tumor ids into columns and prefix all
-# previous columns with a short string indicating the data type
-custom.tumorids <- c('TT_OESOPHAGUS'='TT1', 'TT_THYROID'='TT2')
-prep <- function(d, prefix) d %>% 
-  # Make tumor id first column
-  select(tumor_id, everything()) %>%
-  # Add column prefix indicating origin of dataset (e.g. 'cn' for Copy Number)
-  setNames(., c('tumor_id', paste(prefix, names(.), sep='.')[-1])) %>% 
-  # Remove "X" prefixed to all tumor IDs by CGDS API
-  mutate(tumor_id=str_replace(tumor_id, '^X', '')) %>% 
-  # Match any known conflicts in tumor IDs to custom IDs
-  mutate(tumor_id=ifelse(tumor_id %in% names(custom.tumorids), custom.tumorids[tumor_id], tumor_id)) %>%
-  # Restrict tumor IDs to only substring before first underscore
-  mutate(tumor_id=str_replace(tumor_id, '_.*', ''))
+d.biop <- GetBioPortalData()
+d.ctd2 <- GetCTD2V2Data()
 
-# Get list of unique gene symbols to collect data for
-gene.symbols <- GetHUGOGeneNames()
+d.cosmic <- GetCOSMICData()
 
-# Load copy number, gene expression, and mutation data
-biop.cn <- GetBioPortalData(gene.symbols, GEN_PROF_COPY_NUMBER) %>% prep('cn')
-biop.ge <- GetBioPortalData(gene.symbols, GEN_PROF_GENE_EXPRESSION) %>% prep('ge')
-biop.mu <- GetBioPortalData(gene.symbols, GEN_PROF_MUTATION) %>% prep('mu')
+scale.v <- function(x) (x - mean(x, na.rm=T)) / sd(x, na.rm=T)
 
-biop.ct <- sapply(list(biop.cn, biop.ge, biop.mu), nrow)
-if (length(unique(biop.ct)) != 1)
-  stop('BioPortal datasets have differing numbers of rows')
+d <- d.biop %>% 
+  left_join(d.ctd2, by='tumor_id') %>% 
+  left_join(d.cosmic, by='tumor_id') %>%
+  select(tumor_id, ic_50, auc, everything())
 
-# Merge all datasets above into one data frame
-biop.data <- biop.cn %>% 
-  inner_join(biop.ge, by='tumor_id') %>%
-  inner_join(biop.mu, by='tumor_id')
+# Determine genomic data fields
+c.mu <- names(d)[str_detect(names(d), '^mu.')]
+c.ge <- names(d)[str_detect(names(d), '^ge.')]
+c.cn <- names(d)[str_detect(names(d), '^cn.')]
 
-# Verify that all tumor IDs were found in each dataset
-if (nrow(biop.data) != nrow(biop.cn))
-  stop('Some records lost after join on tumor ID (review and retry)')
+# Determine remaining fields like tumor id, AUC, and IC 50
+c.id <- setdiff(names(d), c(c.mu, c.ge, c.cn))
 
-#----------------#
-# Load CTD2 Data #
-#----------------#
-
-ctd2.data <- GetCTD2V2Data()
-
-data <- biop.data %>% left_join(ctd2.data, by='tumor_id')
+# Scale all numeric fields
+# sapply(d[,c.cn], class) %>% table
+d.trans <- d %>% mutate_each_(funs(scale.v), c(c.ge, c.cn))
 
 
+PrepareMutation <- function(d){
+  if (length(d) == 0)
+    return(NULL)
+  
+  # Fetch a single feature value to be used for all-NA rows
+  proto <- str_split(d, ',') %>% unlist %>% na.omit %>% head(1)
+  
+  # TODO: Add regex filtering for chars in mutation names
+  
+  foreach(v=str_split(d, ','), i=icount(), .combine=rbind) %do% {
+    if (length(v) == 1 && is.na(v))
+      return(data.frame(feature=proto, value=1, i=i))
+    if (length(v) > 1)
+      v <- c(v, paste(v, collapse=':'))
+    data.frame(feature=v, value=1, i=i)
+  } %>% 
+    dcast(i ~ feature, value.var='value', fun.aggregate=length) %>% 
+    select(-i)
+}
 
-#------------------#
-# Load COSMIC Data #
-#------------------#
-# TBD
+# c('SDF,ADF', 'SDF,ADF,YYY', 'XXX', NA) %>% setNames(c('a', 'b', 'c')) %>% PrepareMutation()
+
+d.mu <- foreach(x=c.mu, .combine=cbind) %do% {
+  PrepareMutation(d.trans[,x])
+}
 
 
+# mutate(ic_50_s=scale.v(ic_50), auc_s=scale.v(auc))
+
+# d[,c('tumor_id', 'ic_50', 'auc')] %>% head
 

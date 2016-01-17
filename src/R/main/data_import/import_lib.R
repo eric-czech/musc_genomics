@@ -6,7 +6,8 @@
 #' 
 #' @author eczech
 #'-----------------------------------------------------------------------------
-source('utils.R')
+library(devtools)
+source_url('https://cdn.rawgit.com/eric-czech/portfolio/master/demonstrative/R/common/utils.R')
 source('cache.R')
 
 lib('dplyr')
@@ -15,9 +16,9 @@ lib('RCurl')
 lib('cgdsr')
 
 
-#------------------------------#
-# HUGO Constants and Functions #
-#------------------------------#
+#--------------------------------------#
+##### HUGO Constants and Functions #####
+#--------------------------------------#
 
 HUGO_GENE_NAMES_URL <- 'https://s3-us-west-2.amazonaws.com/eric.a.czech/Public/musc_genomics/hugo_genes.csv'
 
@@ -34,9 +35,9 @@ GetHUGOGeneNames <- function(){
     .$Approved.Symbol %>% unique
 }
 
-#------------------------------------#
-# cBioPortal Constants and Functions #
-#------------------------------------#
+#---------------------------------------------#
+##### cBioPortal Constants and Functions ######
+#---------------------------------------------#
 
 GetCGDS <- function() CGDS("http://www.cbioportal.org/public-portal/")
 GEN_PROF_COPY_NUMBER <- 'cellline_ccle_broad_log2CNA'
@@ -44,7 +45,7 @@ GEN_PROF_GENE_EXPRESSION <- 'cellline_ccle_broad_mrna_median_Zscores'
 GEN_PROF_MUTATION <- 'cellline_ccle_broad_mutations'
 
 
-GetBioPortalData <- function(gene.symbols, genetic.profile, chunk.size=50){
+GetGeneticProfileData <- function(gene.symbols, genetic.profile, chunk.size=50){
   #' Returns cBioPortal data for the given genetic profile
   #' 
   #' Note that the list of genes to get data for will be split into chunks
@@ -65,8 +66,9 @@ GetBioPortalData <- function(gene.symbols, genetic.profile, chunk.size=50){
       } else x
     }
     
+    print(length(gene.partitions))
     # Fetch CCLE data for the given #genetic.profile, for each chunk
-    temp.chunks <- gene.partitions[1:5] # TODO: Remove this limit later
+    temp.chunks <- gene.partitions[1:10] # TODO: Remove this limit later
     data <- foreach(genes=temp.chunks)%do%{
       getProfileData(cgds, genes, genetic.profile, "cellline_ccle_broad_all") %>%
         add_rownames(var='tumor_id') %>% mutate_each(funs(to.char)) 
@@ -92,10 +94,58 @@ GetBioPortalData <- function(gene.symbols, genetic.profile, chunk.size=50){
   FetchFromDisk(genetic.profile, loader) 
 }
 
+GetBioPortalData <- function(){
+  #' Returns cBioPortal data for all desired genetic profiles.  
+  #' 
+  #' In other words, this function returns a unified data frame containing
+  #' all gene expression, copy number, and mutation data where each of those
+  #' have columns corresponding to different genes.  In the resulting data frame,
+  #' those columns containing gene names are prefixed by a short string describing
+  #' which kind of data they contain (e.g. 'cn.' for copy number)
+  
+  # Function used to put CCLE tumor ids into columns and prefix all
+  # previous columns with a short string indicating the data type
+  custom.tumorids <- c('TT_OESOPHAGUS'='TT1', 'TT_THYROID'='TT2')
+  prep <- function(d, prefix) d %>% 
+    # Make tumor id first column
+    select(tumor_id, everything()) %>%
+    # Add column prefix indicating origin of dataset (e.g. 'cn' for Copy Number)
+    setNames(., c('tumor_id', paste(prefix, names(.), sep='.')[-1])) %>% 
+    # Remove "X" prefixed to all tumor IDs by CGDS API
+    mutate(tumor_id=str_replace(tumor_id, '^X', '')) %>% 
+    # Match any known conflicts in tumor IDs to custom IDs
+    mutate(tumor_id=ifelse(tumor_id %in% names(custom.tumorids), custom.tumorids[tumor_id], tumor_id)) %>%
+    # Restrict tumor IDs to only substring before first underscore
+    mutate(tumor_id=str_replace(tumor_id, '_.*', ''))
+  
+  # Get list of unique gene symbols to collect data for
+  gene.symbols <- GetHUGOGeneNames()
+  
+  # Load copy number, gene expression, and mutation data
+  biop.cn <- GetGeneticProfileData(gene.symbols, GEN_PROF_COPY_NUMBER) %>% prep('cn')
+  biop.ge <- GetGeneticProfileData(gene.symbols, GEN_PROF_GENE_EXPRESSION) %>% prep('ge')
+  biop.mu <- GetGeneticProfileData(gene.symbols, GEN_PROF_MUTATION) %>% prep('mu')
+  
+  biop.ct <- sapply(list(biop.cn, biop.ge, biop.mu), nrow)
+  if (length(unique(biop.ct)) != 1)
+    stop('BioPortal datasets have differing numbers of rows')
+  
+  # Merge all datasets above into one data frame
+  biop.data <- biop.cn %>% 
+    inner_join(biop.ge, by='tumor_id') %>%
+    inner_join(biop.mu, by='tumor_id')
+  
+  # Verify that all tumor IDs were found in each dataset
+  if (nrow(biop.data) != nrow(biop.cn))
+    stop('Some records lost after join on tumor ID (review and retry)')
+  
+  biop.data
+}
 
-#------------------------------#
-# CTD2 Constants and Functions #
-#------------------------------#
+
+#--------------------------------------#
+##### CTD2 Constants and Functions #####
+#--------------------------------------#
 
 # Links found by browsing here: https://ctd2.nci.nih.gov/dataPortal/
 CTD2_V1_URL <- 'ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv1.0_2013_pub_Cell_154_1151/CTRPv1.0_2013_pub_Cell_154_1151.zip'  
@@ -154,8 +204,7 @@ GetCTD2V2Data <- function(){
     d.ctd %>% 
       mutate(tumor_id=toupper(str_trim(tumor_id))) %>%
       group_by(tumor_id) %>% 
-      summarise(area_under_curve=mean(area_under_curve)) %>% ungroup
-      
+      summarise(auc=mean(area_under_curve)) %>% ungroup
   }
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
@@ -177,3 +226,35 @@ GetCTD2V1Data <- function(){
   # on disk or loading from disk if previously created
   FetchFromDisk('ctd2_auc_v1', loader) 
 }
+
+
+#--------------------------------------#
+##### CTD2 Constants and Functions #####
+#--------------------------------------#
+
+COSMIC_V1_URL <- 'ftp://ftp.sanger.ac.uk/pub/project/cancerrxgene/releases/release-5.0/gdsc_manova_input_w5.csv'
+
+GetCOSMICData <- function(){
+  loader <- function(){
+    file.path <- GetCachePath('cosmic_v1_manova_input.csv')
+    if (!file.exists(file.path))
+      download.file(COSMIC_V1_URL, file.path, mode="wb")
+    
+    # Read in downloaded data frame
+    read.csv(file.path, sep=',', stringsAsFactors=F) %>% 
+      # Rename necessary fields
+      select(tumor_id=Cell.Line, ic_50=ABT.263_IC_50) %>% 
+      # Convert IC 50 to numeric and replace hyphens in Cell Line ID (w/o hyphens, they match HUGO)
+      mutate(
+        ic_50 = suppressWarnings(as.numeric(ic_50)), 
+        tumor_id=str_replace_all(tumor_id, '\\-', '')
+      ) %>% 
+      # Remove any rows with IC 50 NA
+      filter(!is.na(ic_50))
+  }
+  # Lazy-load these results (they're expensive to compute), saving them
+  # on disk or loading from disk if previously created
+  FetchFromDisk('cosmic_v1', loader) 
+}
+
+d.cosmic <- GetCOSMICData()
