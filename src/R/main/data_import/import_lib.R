@@ -6,14 +6,15 @@
 #' 
 #' @author eczech
 #'-----------------------------------------------------------------------------
-library(devtools)
-source_url('https://cdn.rawgit.com/eric-czech/portfolio/master/demonstrative/R/common/utils.R')
+source('utils.R')
 source('cache.R')
-
 lib('dplyr')
 lib('stringr')
 lib('RCurl')
 lib('cgdsr')
+lib('foreach')
+lib('iterators')
+lib('reshape2')
 
 
 #--------------------------------------#
@@ -68,8 +69,8 @@ GetGeneticProfileData <- function(gene.symbols, genetic.profile, chunk.size=50){
     
     print(length(gene.partitions))
     # Fetch CCLE data for the given #genetic.profile, for each chunk
-    temp.chunks <- gene.partitions[1:10] # TODO: Remove this limit later
-    data <- foreach(genes=temp.chunks)%do%{
+    #temp.chunks <- gene.partitions[1:Inf] # TODO: Remove this limit later
+    data <- foreach(genes=gene.partitions)%do%{
       getProfileData(cgds, genes, genetic.profile, "cellline_ccle_broad_all") %>%
         add_rownames(var='tumor_id') %>% mutate_each(funs(to.char)) 
     }
@@ -228,9 +229,9 @@ GetCTD2V1Data <- function(){
 }
 
 
-#--------------------------------------#
-##### CTD2 Constants and Functions #####
-#--------------------------------------#
+#----------------------------------------#
+##### COSMIC Constants and Functions #####
+#----------------------------------------#
 
 COSMIC_V1_URL <- 'ftp://ftp.sanger.ac.uk/pub/project/cancerrxgene/releases/release-5.0/gdsc_manova_input_w5.csv'
 
@@ -256,5 +257,3 @@ GetCOSMICData <- function(){
   # on disk or loading from disk if previously created
   FetchFromDisk('cosmic_v1', loader) 
 }
-
-d.cosmic <- GetCOSMICData()
