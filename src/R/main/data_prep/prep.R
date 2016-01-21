@@ -15,7 +15,10 @@ lib('reshape2')
 # options(enable.cache=T)
 # options(enable.cache=F)
 
-GetPreparedData <- function(raw.data=NULL, scale.numeric.fields=T, min.mutations=3){
+GetPreparedData <- function(
+  raw.data=NULL, scale.numeric.features=T, 
+  scale.responses=T, min.mutations=3){
+  
   if (!is.null(raw.data)) d <- raw.data
   else d <- GetRawData()
   
@@ -32,6 +35,7 @@ GetPreparedData <- function(raw.data=NULL, scale.numeric.fields=T, min.mutations
   
   # Scale all numeric fields, if requested
   if (scale.numeric.fields) d <- d %>% mutate_each_(funs(scale.v), c(c.ge, c.cn))
+  if (scale.responses) d <- d %>% mutate(funs(scale.v), ic_50, auc)
   
   # Dummy encode mutation values
   d.mu <- foreach(x=c.mu, .combine=cbind) %do% PrepareMutation(d[,x])
@@ -54,7 +58,7 @@ GetPreparedData <- function(raw.data=NULL, scale.numeric.fields=T, min.mutations
   list(data=d, fields=list(copy_number=c.cn, gene_expression=c.ge, mutations=c.mu))
 }
 
-d <- GetPreparedData()
+# d <- GetPreparedData()
 
 # mutate(ic_50_s=scale.v(ic_50), auc_s=scale.v(auc))
 

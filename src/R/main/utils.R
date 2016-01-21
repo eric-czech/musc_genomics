@@ -1,2 +1,2 @@
 library(devtools)
-source_url('https://cdn.rawgit.com/eric-czech/portfolio/master/functional/common/R/utils.R')
+source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/common/R/utils.R')
