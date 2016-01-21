@@ -103,6 +103,9 @@ GetBioPortalData <- function(){
   #' have columns corresponding to different genes.  In the resulting data frame,
   #' those columns containing gene names are prefixed by a short string describing
   #' which kind of data they contain (e.g. 'cn.' for copy number)
+  #' 
+  #' Note that this function may take a long time to run.  Previous run times:
+  #' Trial 1 - 1hr 19mins (for all genes -- 38,649 features in total)
   
   # Function used to put CCLE tumor ids into columns and prefix all
   # previous columns with a short string indicating the data type
