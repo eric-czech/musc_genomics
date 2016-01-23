@@ -13,27 +13,49 @@ lib('foreach')
 lib('iterators')
 lib('stringr')
 
-CleanMutation <- function(m){
-  paste(str_extract_all(m, '\\w')[[1]], collapse='') %>% str_replace('_', '') %>% toupper
+CleanMutations <- function(m){
+  str_replace_all(m, '[^\\w,]', '\\.') %>% 
+    str_replace_all('_', '\\.') %>% str_trim %>% toupper
 }
 
-PrepareMutation <- function(d){
+PrepareMutation <- function(d, gene){
   if (length(d) == 0)
     return(NULL)
   
+  d <- CleanMutations(d)
+  
   # Fetch a single feature value to be used for all-NA rows
-  proto <- str_split(d, ',') %>% unlist %>% na.omit %>% head(1) %>% CleanMutation
+  proto <- str_split(d, ',') %>% unlist %>% na.omit %>% head(1) 
   
   foreach(v=str_split(d, ','), i=icount(), .combine=rbind) %do% {
     if (length(v) == 1 && is.na(v))
       return(data.frame(feature=proto, value=0, i=i))
-    v <- sapply(v, CleanMutation)
+    v <- unique(v)
     if (length(v) > 1)
       v <- c(v, paste(v, collapse=':'))
     data.frame(feature=v, value=1, i=i)
   } %>% 
+    mutate(feature=paste0(gene, '_', feature)) %>%
     dcast(i ~ feature, value.var='value', fun.aggregate=sum) %>% 
     select(-i)
 }
+
+RemoveRareMutations <- function(d, c.mu, min.mutations=3){
+  rare.mutations <- which(apply(d[,c.mu], 2, sum) < min.mutations)
+  if (length(rare.mutations) == 0) d
+  else d %>% select(-one_of(c.mu[rare.mutations]))
+}
+
+GetUnivariateScores <- function(d, response, numeric.features, binary.features){
+  y <- d[,response]
+  nf <- foreach(feat=numeric.features, .combine=c) %do% gamScores(d[,feat], y)
+  bf <- foreach(feat=binary.features, .combine=c) %do% anovaScores(y, factor(d[,feat]))
+  rbind(
+    data.frame(type='numeric', score=nf, feature=numeric.features),
+    data.frame(type='binary', score=bf, feature=binary.features)
+  ) %>% mutate(feature=as.character(feature))
+}
+#f.scores <- GetUnivariateScores(d.prep, 'response', c(c.cn, c.ge), c.mu)
+
 
 # c('SDF,ADF', 'SDF,ADF,YYY', 'XXX', NA) %>% setNames(c('a', 'b', 'c')) %>% PrepareMutation() 
