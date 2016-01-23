@@ -124,5 +124,5 @@ TrainSubsetModels <- function(d){
                   trControl = trainControl(method = "repeatedcv", repeats = 5))
 }
 
-ctl <- sbfControl(functions = rfSBF)
+
 
