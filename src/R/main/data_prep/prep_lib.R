@@ -42,8 +42,20 @@ PrepareMutation <- function(d, gene){
 
 RemoveRareMutations <- function(d, c.mu, min.mutations=3){
   rare.mutations <- which(apply(d[,c.mu], 2, sum) < min.mutations)
-  d %>% select(-one_of(c.mu[rare.mutations]))
+  if (length(rare.mutations) == 0) d
+  else d %>% select(-one_of(c.mu[rare.mutations]))
 }
+
+GetUnivariateScores <- function(d, response, numeric.features, binary.features){
+  y <- d[,response]
+  nf <- foreach(feat=numeric.features, .combine=c) %do% gamScores(d[,feat], y)
+  bf <- foreach(feat=binary.features, .combine=c) %do% anovaScores(y, factor(d[,feat]))
+  rbind(
+    data.frame(type='numeric', score=nf, feature=numeric.features),
+    data.frame(type='binary', score=bf, feature=binary.features)
+  ) %>% mutate(feature=as.character(feature))
+}
+#f.scores <- GetUnivariateScores(d.prep, 'response', c(c.cn, c.ge), c.mu)
 
 
 # c('SDF,ADF', 'SDF,ADF,YYY', 'XXX', NA) %>% setNames(c('a', 'b', 'c')) %>% PrepareMutation() 

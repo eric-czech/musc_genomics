@@ -27,9 +27,9 @@ GetPreparedData <- function(raw.data=NULL, min.mutations=3){
     else d <- GetRawData()
     
     # Determine genomic data fields
-    c.mu <- names(d)[str_detect(names(d), '^mu.')]
-    c.ge <- names(d)[str_detect(names(d), '^ge.')]
-    c.cn <- names(d)[str_detect(names(d), '^cn.')]
+    c.mu <- GetFeatures(d, 'mu')
+    c.ge <- GetFeatures(d, 'ge')
+    c.cn <- GetFeatures(d, 'cn')
     
     # Determine remaining fields like tumor id, AUC, and IC 50
     c.id <- setdiff(names(d), c(c.mu, c.ge, c.cn))
@@ -51,7 +51,7 @@ GetPreparedData <- function(raw.data=NULL, min.mutations=3){
     
     # Merge mutation data with all other data and reset mutation field names
     d <- d %>% select(-one_of(c.mu)) %>% cbind(d.mu)
-    c.mu <- names(d)[str_detect(names(d), '^mu.')]
+    c.mu <- GetFeatures(d, 'mu')
     
     # Return results
     list(data=d, fields=list(copy_number=c.cn, gene_expression=c.ge, mutations=c.mu))
@@ -59,15 +59,16 @@ GetPreparedData <- function(raw.data=NULL, min.mutations=3){
   FetchFromDisk('data_prep_01', loader) 
 }
 
+GetFeatures <- function(d, type){
+  names(d)[str_detect(names(d), sprintf('^%s.', type))]
+}
 
-GetUnivariateScores <- function(d, response, numeric.features, binary.features){
-  y <- d[,response]
-  nf <- foreach(feat=numeric.features, .combine=c) %do% gamScores(d[,feat], y)
-  bf <- foreach(feat=binary.features, .combine=c) %do% anovaScores(y, factor(d[,feat]))
-  rbind(
-    data.frame(type='numeric', score=nf, feature=numeric.features),
-    data.frame(type='binary', score=bf, feature=binary.features)
-  )
+ApplyFeatureFilter <- function(d, numeric.features, binary.features, 
+                               numeric.score.p=.05, binary.score.p=.05){
+  f.scores <- GetUnivariateScores(d, 'response', numeric.features, binary.features)
+  rm.numeric <- f.scores %>% filter(type=='numeric' & score > numeric.score.p) %>% .$feature
+  rm.binary  <- f.scores %>% filter(type=='binary' & score > binary.score.p) %>% .$feature  
+  d %>% filter(-one_of(c(rm.binary, rm.numeric)))
 }
 
 # d <- GetPreparedData()
