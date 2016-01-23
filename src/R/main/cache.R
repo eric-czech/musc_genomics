@@ -43,6 +43,7 @@ FetchFromDisk <- function(filename, loader, dir=DEFAULT_CACHE_PATH){
     load(fpath, envir=env)
     env$res
   } else {
+    cat(sprintf('No cached file "%s" found on disk so data for it will be loaded...', fpath))
     res <- loader()
     save(res, file=fpath)
     res

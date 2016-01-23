@@ -17,7 +17,7 @@ GetRawData <- function(){
   d.biop <- GetBioPortalData() # Fetch cell line genomic predictors
   d.ctd2 <- GetCTD2V2Data()    # Fetch AUC response data
   d.cosmic <- GetCOSMICData()  # Fetch IC 50 response data
-
+  
   # Join everything together and return merged result
   d <- d.biop %>% 
     left_join(d.ctd2, by='tumor_id') %>% 

@@ -210,6 +210,7 @@ GetCTD2V2Data <- function(){
       group_by(tumor_id) %>% 
       summarise(auc=mean(area_under_curve)) %>% ungroup
   }
+  
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
   FetchFromDisk('ctd2_auc_v2', loader) 

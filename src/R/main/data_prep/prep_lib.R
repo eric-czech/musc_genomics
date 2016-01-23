@@ -13,27 +13,37 @@ lib('foreach')
 lib('iterators')
 lib('stringr')
 
-CleanMutation <- function(m){
-  paste(str_extract_all(m, '\\w')[[1]], collapse='') %>% str_replace('_', '') %>% toupper
+CleanMutations <- function(m){
+  str_replace_all(m, '[^\\w,]', '\\.') %>% 
+    str_replace_all('_', '\\.') %>% str_trim %>% toupper
 }
 
-PrepareMutation <- function(d){
+PrepareMutation <- function(d, gene){
   if (length(d) == 0)
     return(NULL)
   
+  d <- CleanMutations(d)
+  
   # Fetch a single feature value to be used for all-NA rows
-  proto <- str_split(d, ',') %>% unlist %>% na.omit %>% head(1) %>% CleanMutation
+  proto <- str_split(d, ',') %>% unlist %>% na.omit %>% head(1) 
   
   foreach(v=str_split(d, ','), i=icount(), .combine=rbind) %do% {
     if (length(v) == 1 && is.na(v))
       return(data.frame(feature=proto, value=0, i=i))
-    v <- sapply(v, CleanMutation)
+    v <- unique(v)
     if (length(v) > 1)
       v <- c(v, paste(v, collapse=':'))
     data.frame(feature=v, value=1, i=i)
   } %>% 
+    mutate(feature=paste0(gene, '_', feature)) %>%
     dcast(i ~ feature, value.var='value', fun.aggregate=sum) %>% 
     select(-i)
 }
+
+RemoveRareMutations <- function(d, c.mu, min.mutations=3){
+  rare.mutations <- which(apply(d[,c.mu], 2, sum) < min.mutations)
+  d %>% select(-one_of(c.mu[rare.mutations]))
+}
+
 
 # c('SDF,ADF', 'SDF,ADF,YYY', 'XXX', NA) %>% setNames(c('a', 'b', 'c')) %>% PrepareMutation() 
