@@ -21,6 +21,24 @@ registerDoMC(12)
 # Scaling function that ignores NA values
 ScaleNumeric <- function(x) (x - mean(x, na.rm=T)) / sd(x, na.rm=T)
 
+RemoveNA <- function(d, row.threshold=.1){
+  if (max(table(d$tumor_id)) != 1)
+    stop('Found non-unique tumor id(s)')
+  cts <- d %>% group_by(tumor_id) %>% do({
+    r <- .
+    data.frame(tumor_id=r$tumor_id[1], pct_na=sum(is.na(r))/ncol(r), stringsAsFactors=F)
+  })
+  rm.tumor <- cts %>% filter(pct_na >= row.threshold) %>% .$tumor_id
+  rm.warn <- cts %>% filter(pct_na > 0 & pct_na < row.threshold) %>% .$tumor_id
+  if (length(rm.warn) > 0)
+    warning(sprintf(
+      'The following tumors have NA predictor values but not enough to meet given 
+      fractional (by-row) threshold of "%s": %s', row.threshold, paste(rm.warn, collapse=', ')))
+  if (length(rm.tumor) > 0)
+    cat(sprintf('\nRemoving %s tumor records with high number of NA values', length(rm.tumor)))
+  d %>% filter(!tumor_id %in% rm.tumor)
+}
+
 GetPreparedData <- function(raw.data=NULL, min.mutations=3){
   loader <- function(){
     if (!is.null(raw.data)) d <- raw.data
@@ -68,7 +86,7 @@ ApplyFeatureFilter <- function(d, numeric.features, binary.features,
   f.scores <- GetUnivariateScores(d, 'response', numeric.features, binary.features)
   rm.numeric <- f.scores %>% filter(type=='numeric' & score > numeric.score.p) %>% .$feature
   rm.binary  <- f.scores %>% filter(type=='binary' & score > binary.score.p) %>% .$feature  
-  d %>% filter(-one_of(c(rm.binary, rm.numeric)))
+  d %>% select(-one_of(c(rm.binary, rm.numeric)))
 }
 
 # d <- GetPreparedData()
