@@ -21,6 +21,10 @@ registerDoMC(12)
 # Scaling function that ignores NA values
 ScaleNumeric <- function(x) (x - mean(x, na.rm=T)) / sd(x, na.rm=T)
 
+ApplyScaling<- function(d){
+  foreach(f=names(d), .combine=cbind) %dopar% ScaleNumeric(d[,f])
+}
+
 RemoveNA <- function(d, row.threshold=.1){
   if (max(table(d$tumor_id)) != 1)
     stop('Found non-unique tumor id(s)')
@@ -81,18 +85,22 @@ GetFeatures <- function(d, type){
   names(d)[str_detect(names(d), sprintf('^%s.', type))]
 }
 
-ApplyFeatureFilter <- function(d, numeric.features, binary.features, 
+ApplyFeatureFilter <- function(X, y, numeric.features, binary.features, 
                                numeric.score.p=.05, binary.score.p=.05){
-  f.scores <- GetUnivariateScores(d, 'response', numeric.features, binary.features)
+  f.scores <- GetUnivariateScores(X, y, numeric.features, binary.features)
   rm.numeric <- f.scores %>% filter(type=='numeric' & score > numeric.score.p) %>% .$feature
   rm.binary  <- f.scores %>% filter(type=='binary' & score > binary.score.p) %>% .$feature  
-  d %>% select(-one_of(c(rm.binary, rm.numeric)))
+  X %>% select(-one_of(c(rm.binary, rm.numeric)))
 }
 
-# d <- GetPreparedData()
 
-# mutate(ic_50_s=scale.v(ic_50), auc_s=scale.v(auc))
+ApplyZeroVarianceFilter <- function(d){
+  zero.var <- foreach(f=names(d), .combine=cbind) %dopar%{
+    length(unique(d[,f])) == 1
+  }
+  d[,names(d)[!zero.var]]
+}
 
-# d[,c('tumor_id', 'ic_50', 'auc')] %>% head
+
 
 

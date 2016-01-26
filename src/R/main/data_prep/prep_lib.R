@@ -46,11 +46,9 @@ RemoveRareMutations <- function(d, c.mu, min.mutations=3){
   else d %>% select(-one_of(c.mu[rare.mutations]))
 }
 
-GetUnivariateScores <- function(d, response, numeric.features, binary.features){
-  y <- d[,response]
-  nf <- foreach(feat=numeric.features, .combine=c) %dopar% gamScores(d[,feat], y)
-  #nf <- foreach(feat=numeric.features, .combine=c) %do% gamScores(scale(d[,feat]), y)
-  bf <- foreach(feat=binary.features, .combine=c) %dopar% anovaScores(y, factor(d[,feat]))
+GetUnivariateScores <- function(X, y, numeric.features, binary.features){
+  nf <- foreach(feat=numeric.features, .combine=c) %dopar% gamScores(X[,feat], y)
+  bf <- foreach(feat=binary.features, .combine=c) %dopar% anovaScores(y, factor(X[,feat]))
   rbind(
     data.frame(type='numeric', score=nf, feature=numeric.features),
     data.frame(type='binary', score=bf, feature=binary.features)

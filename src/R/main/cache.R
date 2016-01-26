@@ -39,11 +39,12 @@ GetCachePath <- function(filename, dir=DEFAULT_CACHE_PATH){
 FetchFromDisk <- function(filename, loader, dir=DEFAULT_CACHE_PATH){
   fpath <- GetCachePath(paste0(filename, '.Rdata'), dir)
   if (file.exists(fpath) && CacheEnabled()){
+    logdebug('Loading cached data at "%s" from disk', fpath)
     env <- new.env()
     load(fpath, envir=env)
     env$res
   } else {
-    cat(sprintf('No cached file "%s" found on disk so data for it will be loaded...', fpath))
+    logdebug('No cached file "%s" found on disk so data for it will be loaded now', fpath)
     res <- loader()
     save(res, file=fpath)
     res

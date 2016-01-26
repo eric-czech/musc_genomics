@@ -1,5 +1,5 @@
 #'-----------------------------------------------------------------------------
-#' ML Model Training Functions
+#' ML Model Training Library
 #'
 #' This module contains code for feature selection and preprocessing utilities
 #' @author eczech
@@ -7,7 +7,8 @@
 source('utils.R')
 lib('caret')
 lib('gam')
-
+lib('glmnet')
+lib('kernlab')
 
 .anovaScore <- function(x, y) {
   pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], silent = TRUE)
@@ -17,7 +18,8 @@ lib('gam')
 }
 
 .gamScore <- function(x, y){
-  pv <- try(anova(gam::gam(y ~ s(x)), test = "F")[2, "Pr(F)"], 
+  browser()
+  pv <- try(anova(gam::gam(y ~ s(x)))[2, "Pr(F)"], 
             silent = TRUE)
   if (any(class(pv) == "try-error")) 
     pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], 
@@ -42,4 +44,17 @@ GetFeatureSelector <- function(num.threshold=.05, bin.threshold=.05){
 
 ScaleVector <- function(d){
   (d - mean(d, na.rm = T)) / (sd(d, na.rm=T))
+}
+
+GetGlmnetLambda <- function(X.preproc, alpha=.01){
+  #' Calculates estimated, optimal values for lambda glmnet parameter
+  init <- glmnet(as.matrix(X.preproc), y, family = 'gaussian', nlambda = 100, alpha = alpha)
+  lambda <- unique(init$lambda)
+  lambda <- lambda[-c(1, length(lambda))]
+  lambda <- lambda[1:length(lambda)]
+  lambda
+}
+
+GetSvmSigma <- function(X.preproc, frac=1){
+  sigest(as.matrix(X.preproc), frac = frac)
 }
