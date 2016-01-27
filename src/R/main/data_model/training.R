@@ -9,6 +9,7 @@
 source('utils.R')
 source('data_prep/prep.R')
 source('data_model/training_lib.R')
+source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/ml/R/metrics.R')
 lib('MASS')
 lib('caret')
 lib('doMC')
@@ -83,7 +84,7 @@ set.seed(SEED)
 #X <- d.samp[,sample(c(c.ge, c.cn, c.mu), replace=F, size = 100)]; y <- d.samp[,'response']
 X <- d.prep.tr[,c(c.ge, c.cn, c.mu)]; y <- d.prep.tr[,'response']
 
-cat('Creating hyperparameter estimates')
+loginfo('Creating hyperparameter estimates')
 X.preproc <- predict(preProcess(X, method=preproc), X)
 glmnet.lambda <- GetGlmnetLambda(X.preproc)
 svm.sigma <- GetSvmSigma(X.preproc)
@@ -118,7 +119,7 @@ cv.res <- foreach(fold=createFolds(y, k = 10, list = T, returnTrain = F), i=icou
     X.train.all <- predict(pp.all, X.train.all)
     X.train.sml <- predict(pp.sml, X.train.sml)
     X.test.all  <- predict(pp.all, X.test)
-    X.test.sml  <- predict(pp.sml, X.test)
+    X.test.sml  <- predict(pp.sml, X.test[,names(X.train.sml)])
     
     list(
       preproc=list(pp.all=pp.all, pp.sml=pp.sml),
@@ -148,14 +149,14 @@ cv.res <- foreach(fold=createFolds(y, k = 10, list = T, returnTrain = F), i=icou
   set.seed(SEED); registerDoMC(3)
   m.svm.1 <- train(
     d$X.train.sml, d$y.train, method='svmRadial', 
-    tuneLength=8, search='grid',
+    tuneLength=300, search='random',
     trControl = trctrl(verboseIter=T)
   )
   
   set.seed(SEED); registerDoMC(3)
   m.svm.2 <- train(
     d$X.train.sml, d$y.train, method='svmRadial', 
-    tuneGrid = data.frame(.sigma = as.numeric(svm.sigma[1]), .C = 2^(-3:3)),
+    tuneGrid = expand.grid(.sigma = as.numeric(svm.sigma[-2]), .C = 2^(1:6)),
     trControl = trctrl(verboseIter=T)
   )
   
@@ -167,4 +168,14 @@ cv.res <- foreach(fold=createFolds(y, k = 10, list = T, returnTrain = F), i=icou
   list(models=models, data=d)
 }
 
-
+cv.scores <- foreach(r=cv.res, .combine=rbind)%do%{
+  foreach(m=names(r$models), .combine=rbind)%do%{
+    y.pred <- predict(r$models[[m]], r$data$X.test.sml[,names(r$data$X.train.sml)])
+    y.true <- r$data$y.test
+    r2   <- GetRegressorScore(y.true, y.pred, 'rsquared')
+    rmse <- GetRegressorScore(y.true, y.pred, 'rmse')
+    data.frame(model=m, rsquared=r2, rmse=rmse)
+  }
+}
+cv.scores %>% ggplot(aes(x=model, y=rmse)) + geom_point() + geom_boxplot()
+cv.scores %>% ggplot(aes(x=model, y=rsquared)) + geom_point() + geom_boxplot()
