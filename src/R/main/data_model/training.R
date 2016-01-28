@@ -123,6 +123,21 @@ cv.res <- foreach(fold=createFolds(y, k = 10, list = T, returnTrain = F), i=icou
   list(models=models, data=d)
 }
 
+foreach(r=cv.res, .combine=rbind)%do%{
+  r$models$svm.grid$bestTune
+}
+# Best tuning params for svm over large tune length:
+# sigma C
+# 6  0.0002670770 8
+# 5  0.0002895063 4
+# 51 0.0003733021 4
+# 52 0.0003325179 4
+# 53 0.0002968672 4
+# 54 0.0003208822 4
+# 61 0.0003000269 8
+# 55 0.0003545485 4
+# 56 0.0002722678 4
+# 62 0.0003385101 8
 cv.scores <- foreach(r=cv.res, .combine=rbind)%do%{
   foreach(m=names(r$models), .combine=rbind)%do%{
     y.pred <- predict(r$models[[m]], r$data$X.test.sml[,names(r$data$X.train.sml)])
