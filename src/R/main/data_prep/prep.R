@@ -43,7 +43,7 @@ RemoveNA <- function(d, row.threshold=.1){
   d %>% filter(!tumor_id %in% rm.tumor)
 }
 
-GetPreparedData <- function(raw.data=NULL, min.mutations=3){
+GetPreparedData <- function(cache, raw.data=NULL, min.mutations=3){
   loader <- function(){
     if (!is.null(raw.data)) d <- raw.data
     else d <- GetRawData()
@@ -78,7 +78,8 @@ GetPreparedData <- function(raw.data=NULL, min.mutations=3){
     # Return results
     list(data=d, fields=list(copy_number=c.cn, gene_expression=c.ge, mutations=c.mu))
   }
-  FetchFromDisk('data_prep_01', loader) 
+  cache$load('data_prep_01', loader)
+  #FetchFromDisk('data_prep_01', loader) 
 }
 
 GetFeatures <- function(d, type){

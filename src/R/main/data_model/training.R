@@ -7,69 +7,24 @@
 #' @author eczech
 #'-----------------------------------------------------------------------------
 source('utils.R')
-source('data_prep/prep.R')
 source('data_model/training_lib.R')
-source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/ml/R/metrics.R')
 lib('MASS')
 lib('caret')
 lib('doMC')
 lib('iterators')
 
-
 #registerDoMC(8)
 SEED <- 1024
-MODEL_DIR <- '~/genomics_data_cache/models'
-RESPONSE_TYPE <- 'cosmic-only' # This will include ctd2 as well at some point
+model.cache <- Cache(dir=CACHE_DIR, project='training_models')
+data.cache <- Cache(dir=CACHE_DIR, project='training_data')
+
+RESPONSE_TYPE <- 'cosmic' # This will include ctd2 as well at some point
+RESPONSE_SELECTOR <- function(d){ 
+  d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)
+}
 select <- dplyr::select
 
-
-
-d <- GetPreparedData()
-
-fields <- d$fields
-c.ge <- fields$gene_expression
-c.cn <- fields$copy_number
-c.mu <- fields$mutations
-d <- d$data
-
-Prep <- function(d, c.numeric, c.binary, min.mutations=5){
-  d %>% filter(!is.na(ic_50)) %>%                    # For now we're using COSMIC data only
-    rename(response=ic_50) %>% select(-auc) %>%      # Select response field
-    Filter(function(x)!all(is.na(x)), .) %>%         # Remove NA-only columns
-    RemoveNA(row.threshold=.1) %>%                    # Remove rows with large % NA's
-    RemoveRareMutations(c.binary, min.mutations) %>% # Remove cols for rare mutations
-    mutate(response=ScaleVector(response))           # Scale response
-  # nearZeroVar would make sense here as well but no features would be removed in past tests
-}
-d.prep <- Prep(d, c(c.ge, c.cn), c.mu)
-c.mu <- GetFeatures(d.prep, 'mu')
-c.cn <- GetFeatures(d.prep, 'cn')
-c.ge <- GetFeatures(d.prep, 'ge')
-c.numeric <- c(c.cn, c.ge)
-c.binary <- c.mu
-if (any(is.na(d.prep)))
-  stop('Dataset contains unexpected NA values')
-
-
-
-# d.prep <- data.frame(
-#   tumor_id=c('t1', 't2', 't3', 't4', 't5', 't6'),
-#   ic_50=c(-2.3, -1.2, -.3, .9, 1.5, 2.8),
-#   auc=rnorm(6),
-#   'cn.A1BG'=c(2.1, 1.3, .4, -.7, -1.3, -3),
-#   'cn.A1BG.AS1'=c(-1, -2, -5, -3, -4, -3),
-#   'ge.A1BG'=rnorm(6),
-#   'ge.A1BG.AS1'=c(-6, -3, -1, 1, 3, 3.5),
-#   'mu.XPO4_L499F'=c(0, 0, 0, 1, 1, 1),
-#   'mu.XPO4_X498.SPLICE'=c(1, 1, 0, 0, 0, 1)
-# )
-# d.prep <- rbind(d.prep, d.prep)
-# d.prep <- rbind(d.prep, d.prep)
-# d.prep <- rbind(d.prep, d.prep)
-# c.mu <- GetFeatures(d.prep, 'mu')
-# c.cn <- GetFeatures(d.prep, 'cn')
-# c.ge <- GetFeatures(d.prep, 'ge')
-# d.prep <- Prep(d.prep, c(c.ge, c.cn), c.mu)
+d.prep <- GetTrainingData(data.cache, RESPONSE_TYPE, RESPONSE_SELECTOR)
 
 set.seed(SEED)
 d.prep.tr <- d.prep %>% sample_frac(.8, replace = F)

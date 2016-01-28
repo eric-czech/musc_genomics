@@ -5,6 +5,7 @@
 #' @author eczech
 #'-----------------------------------------------------------------------------
 source('utils.R')
+source('data_prep/prep.R')
 lib('caret')
 lib('gam')
 lib('glmnet')
@@ -57,4 +58,30 @@ GetGlmnetLambda <- function(X.preproc, alpha=.01){
 
 GetSvmSigma <- function(X.preproc, frac=1){
   sigest(as.matrix(X.preproc), frac = frac)
+}
+
+
+GetTrainingData <- function(cache, response.type, response.selector){
+  loader <- function(){
+    d <- GetPreparedData(cache)
+    
+    fields <- d$fields
+    c.ge <- fields$gene_expression
+    c.cn <- fields$copy_number
+    c.mu <- fields$mutations
+    d <- d$data
+    
+    d.prep <- response.selector(d) %>%
+      #d %>% filter(!is.na(ic_50)) %>%                 # For now we're using COSMIC data only
+      rename(response=ic_50) %>% select(-auc) %>%      # Select response field
+      Filter(function(x)!all(is.na(x)), .) %>%         # Remove NA-only columns
+      RemoveNA(row.threshold=.1) %>%                   # Remove rows with large % NA's
+      RemoveRareMutations(c.mu, min.mutations) %>% # Remove cols for rare mutations
+      mutate(response=ScaleVector(response))           # Scale response
+  
+    if (any(is.na(d.prep)))
+      stop('Dataset contains unexpected NA values')
+    d.prep
+  }
+  cache$load(sprintf('data_prep_02_%s', response.type), loader)
 }
