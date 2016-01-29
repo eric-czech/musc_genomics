@@ -67,7 +67,6 @@ GetGeneticProfileData <- function(gene.symbols, genetic.profile, chunk.size=50){
       } else x
     }
     
-    print(length(gene.partitions))
     # Fetch CCLE data for the given #genetic.profile, for each chunk
     #temp.chunks <- gene.partitions[1:Inf] # TODO: Remove this limit later
     data <- foreach(genes=gene.partitions)%do%{
@@ -92,7 +91,8 @@ GetGeneticProfileData <- function(gene.symbols, genetic.profile, chunk.size=50){
   }
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
-  FetchFromDisk(genetic.profile, loader) 
+  RAW_CACHE$load(genetic.profile, loader)
+  #FetchFromDisk(genetic.profile, loader) 
 }
 
 GetBioPortalData <- function(){
@@ -157,9 +157,7 @@ CTD2_V2_URL <- 'ftp://caftpd.nci.nih.gov/pub/dcc_ctd2/Broad/CTRPv2.0_2015_ctd2_E
 
 GetCTD2V2Data <- function(){
   loader <- function(){
-    file.path <- GetCachePath('ctd2_v2_expanded_dataset.zip')
-    if (!file.exists(file.path))
-      download.file(CTD2_V2_URL, file.path, mode="wb")
+    file.path <- RAW_CACHE$download('ctd2_auc_v2.zip', CTD2_V2_URL, mode="wb")
     
     # Load raw AUC data for experiments
     d.auc <- read.csv(unz(file.path, 'v20.data.curves_post_qc.txt'), sep='\t', stringsAsFactors=F) %>%
@@ -213,14 +211,13 @@ GetCTD2V2Data <- function(){
   
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
-  FetchFromDisk('ctd2_auc_v2', loader) 
+  RAW_CACHE$load('ctd2_auc_v2', loader)
 }
 
 GetCTD2V1Data <- function(){
   loader <- function(){
-    file.path <- GetCachePath('ctd2_v1_expanded_dataset.zip')
-    if (!file.exists(file.path))
-      download.file(CTD2_V1_URL, file.path, mode="wb")
+    file.path <- RAW_CACHE$download('ctd2_v1_expanded_dataset.zip', CTD2_V1_URL, mode="wb")
+    
     read.csv(unz(file.path, 'v10.D3.area_under_conc_curve.txt'), sep='\t', stringsAsFactors=F) %>%
       filter(str_detect(tolower(cpd_name), 'navitoclax')) %>% 
       rename(tumor_id=ccl_name) %>% select(-cpd_name) %>%
@@ -229,7 +226,7 @@ GetCTD2V1Data <- function(){
   }
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
-  FetchFromDisk('ctd2_auc_v1', loader) 
+  RAW_CACHE$load('ctd2_auc_v1', loader)
 }
 
 
@@ -241,9 +238,7 @@ COSMIC_V1_URL <- 'ftp://ftp.sanger.ac.uk/pub/project/cancerrxgene/releases/relea
 
 GetCOSMICData <- function(){
   loader <- function(){
-    file.path <- GetCachePath('cosmic_v1_manova_input.csv')
-    if (!file.exists(file.path))
-      download.file(COSMIC_V1_URL, file.path, mode="wb")
+    file.path <- RAW_CACHE$download('cosmic_v1_manova_input.csv', COSMIC_V1_URL, mode="wb")
     
     # Read in downloaded data frame
     read.csv(file.path, sep=',', stringsAsFactors=F) %>% 
@@ -259,5 +254,5 @@ GetCOSMICData <- function(){
   }
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
-  FetchFromDisk('cosmic_v1', loader) 
+  RAW_CACHE$load('cosmic_v1', loader)
 }

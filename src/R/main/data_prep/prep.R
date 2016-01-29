@@ -39,7 +39,7 @@ RemoveNA <- function(d, row.threshold=.1){
       'The following tumors have NA predictor values but not enough to meet given 
       fractional (by-row) threshold of "%s": %s', row.threshold, paste(rm.warn, collapse=', ')))
   if (length(rm.tumor) > 0)
-    cat(sprintf('\nRemoving %s tumor records with high number of NA values', length(rm.tumor)))
+    loginfo('\nRemoving %s tumor records with high number of NA values', length(rm.tumor))
   d %>% filter(!tumor_id %in% rm.tumor)
 }
 

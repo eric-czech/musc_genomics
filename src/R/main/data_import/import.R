@@ -10,8 +10,6 @@ source('utils.R')
 source('data_import/import_lib.R')
 lib('dplyr')
 
-# options(enable.cache=T)
-# options(enable.cache=F)
 
 GetRawData <- function(){
   d.biop <- GetBioPortalData() # Fetch cell line genomic predictors
