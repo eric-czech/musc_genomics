@@ -67,6 +67,10 @@ GetTrainingData <- function(cache, response.type, response.selector, min.mutatio
   cache$load(sprintf('data_prep_02_%s', response.type), loader)
 }
 
+DichotomizeOutcome <- function(y) {
+  if (is.null(y)) return(NULL)
+  factor((sign(y) + 1) * .5, levels=c(0, 1), labels=c('neg', 'pos'))
+}
 
 GetFoldDataGenerator <- function(preproc, linear.only, n.core=8, 
                                  sml.num.p=.0001, lrg.num.p=.15, sml.bin.p=.15, lrg.bin.p=.15){    
@@ -74,7 +78,7 @@ GetFoldDataGenerator <- function(preproc, linear.only, n.core=8,
     # Apply feature selector
     loginfo('Running feature selection')
     registerDoMC(n.core)
-    X.dim <- dim(X.train.all)
+
     c.numeric <- c(GetFeatures(X.train.all, 'cn'), GetFeatures(X.train.all, 'ge'))
     c.binary <- GetFeatures(X.train.all, 'mu')
     
@@ -94,16 +98,22 @@ GetFoldDataGenerator <- function(preproc, linear.only, n.core=8,
     pp.sml <- preProcess(X.train.sml, method=preproc)
     X.train.lrg <- predict(pp.lrg, X.train.lrg)
     X.train.sml <- predict(pp.sml, X.train.sml)
-    X.test.lrg  <- predict(pp.lrg, X.test[,names(X.train.lrg)])
-    X.test.sml  <- predict(pp.sml, X.test[,names(X.train.sml)])
     
-    bin.outcome <- function(y) factor((sign(y) + 1) * .5, levels=c(0, 1), labels=c('neg', 'pos'))
+    # X.test may be null if this data preprocessing call is not for resampling iteration
+    if (is.null(X.test)){
+      X.test.lrg <- NULL
+      X.test.sml <- NULL
+    } else {
+      X.test.lrg  <- predict(pp.lrg, X.test[,names(X.train.lrg)])
+      X.test.sml  <- predict(pp.sml, X.test[,names(X.train.sml)])
+    }
+    
     list(
-      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml),
+      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml), X.names=names(X.train.all),
       X.train.sml=X.train.sml, X.train.lrg=X.train.lrg,
       X.test.sml=X.test.sml, X.test.lrg=X.test.lrg,
       y.train=y.train, y.test=y.test,
-      y.train.bin=bin.outcome(y.train), y.test.bin=bin.outcome(y.test.bin)
+      y.train.bin=DichotomizeOutcome(y.train), y.test.bin=DichotomizeOutcome(y.test)
     )
   }
 }
@@ -119,12 +129,29 @@ CreateFoldIndex <- function(y, index, level){
 
 GetDataSummarizer <- function(){
   function(d){
-    gfl <- function(d, t) length(GetFeatures(d, t))
+    gfl <- function(f, t) length(f[str_detect(f, sprintf('^%s.', t))])
+    n.sml <- names(d$X.train.sml)
+    n.lrg <- names(d$X.train.lrg)
     logdebug('Dimension reduction summary after preprocessing:')
-    logdebug('Mutation features   : %s --> %s', gfl(d$X.train.all, 'mu'), gfl(d$X.train.sml, 'mu'))
-    logdebug('Expression features : %s --> %s', gfl(d$X.train.all, 'ge'), gfl(d$X.train.sml, 'ge'))
-    logdebug('Copy Number features: %s --> %s', gfl(d$X.train.all, 'cn'), gfl(d$X.train.sml, 'cn'))
+    logdebug('Mutation features    : %s --> %s / %s', gfl(d$X.names, 'mu'), gfl(n.lrg, 'mu'), gfl(n.sml, 'mu'))
+    logdebug('Expression features  : %s --> %s / %s', gfl(d$X.names, 'ge'), gfl(n.lrg, 'ge'), gfl(n.sml, 'ge'))
+    logdebug('Copy Number features : %s --> %s / %s', gfl(d$X.names, 'cn'), gfl(n.lrg, 'cn'), gfl(n.sml, 'cn'))
   }
+}
+
+
+GetResultSummary <- function(d){
+  pred <- prediction(d$y.pred, d$y.test, label.ordering=c('neg', 'pos'))
+  roc <- performance(pred, 'tpr', 'fpr') 
+  auc <- performance(pred, 'auc')
+  acc <- performance(pred, 'acc')
+  acc.max <- acc@y.values[[1]][which.max(acc@y.values[[1]])]
+  acc.cut <- acc@x.values[[1]][which.max(acc@y.values[[1]])]
+  data.frame(
+    x=roc@x.values[[1]], y=roc@y.values[[1]], 
+    t=roc@alpha.values[[1]], auc=auc@y.values[[1]],
+    acc.max=acc.max, acc.cut=acc.cut
+  )
 }
 
 GetPLSModel <- function(){

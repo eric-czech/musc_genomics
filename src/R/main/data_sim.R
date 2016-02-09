@@ -19,3 +19,13 @@ r <- foreach(p=c(seq(10, 500, length.out=20), seq(250, 2000, by=250)), .combine=
 r %>% ggplot(aes(x=p, y=n)) + geom_line() + theme_bw() +
   geom_abline(intercept=0, slope=.1, linetype='dashed')
 
+trainer.i1 <- Trainer(
+  cache.dir='/tmp/sim_data', 
+  cache.project=paste0(RESPONSE_TYPE, '.all'), 
+  seed=SEED
+)
+trainer.i1$generateFoldIndex(y, CreateFoldIndex)
+fold.data.gen <- GetFoldDataGenerator(preproc, F, n.core=8, 
+                                      sml.num.p=.0001, lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15)
+trainer.i1$generateFoldData(X, y, fold.data.gen, GetDataSummarizer())
+
