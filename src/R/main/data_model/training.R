@@ -32,7 +32,7 @@ set.seed(SEED)
 d.prep.tr <- d.prep %>% sample_frac(.8, replace = F)
 d.prep.ho <- d.prep %>% filter(!tumor_id %in% d.prep.tr$tumor_id)
 #preproc <- c('zv', 'center', 'scale')
-preproc <- c('center', 'scale')
+preproc <- c('zv', 'center', 'scale')
 
 # set.seed(SEED)
 #d.samp <- d.prep.tr %>% sample_frac(.2)
@@ -53,11 +53,14 @@ trctrl <- function(index, ...) trainControl(
 # 3. Should be two trainers resulting, one for regression and one for classification
 # 4. Do this to y.bin --> setLevels(d$y.train, c('neg', 'pos'))
 
-trainer.rl <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'), 
-                   cache.project=paste0(RESPONSE_TYPE, '.reg.lg'), seed=SEED)
-trainer.rl$generateFoldIndex(y, CreateFoldIndex)
-rl.data.gen <- GetFoldDataGenerator(preproc, 'numeric', F, n.core=8, numeric.score.p=.0001, binary.score.p=.15)
-trainer.rl$generateFoldData(X, y, rl.data.gen, GetDataSummarizer())
+X <- X[1:25,1:1000]
+y <- y[1:25]
+trainer.v1 <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'), 
+                   cache.project=paste0(RESPONSE_TYPE, '.all'), seed=SEED)
+trainer.v1$generateFoldIndex(y, CreateFoldIndex)
+fold.data.gen <- GetFoldDataGenerator(preproc, F, n.core=8, 
+                  sml.num.p=.01, lrg.num.p=.05, sml.bin.p=.15, lrg.bin.p=.15)
+trainer.v1$generateFoldData(X, y, fold.data.gen, GetDataSummarizer())
 
 
 trainer.rs <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'), 
@@ -239,7 +242,8 @@ cv.preds <- foreach(m=names(bin.models), .combine=rbind) %do% {
     data.frame(fold=fold$fold, y.pred=fold$y.pred, y.test=y.test, model=m)
   }
 }
-roc <- cv.preds %>% group_by(model) %>% do({
+
+roc <- cv.preds %>% group_by(model, fold) %>% do({
   pred <- prediction(.$y.pred, .$y.test)
   roc <- performance(pred, 'tpr', 'fpr') 
   auc <- performance(pred, 'auc')
@@ -247,10 +251,14 @@ roc <- cv.preds %>% group_by(model) %>% do({
     x=roc@x.values[[1]], y=roc@y.values[[1]], 
     t=roc@alpha.values[[1]], auc=auc@y.values[[1]]
   )
-})
-roc %>% filter(str_detect(model, '.')) %>% 
-  ggplot(aes(x=x, y=y, color=model)) + 
-  geom_line() + geom_abline(alpha=.5) + theme_bw()
+}) %>% ungroup
+roc.auc <- roc %>% group_by(model, fold) %>% summarise(auc=auc[1]) %>% ungroup %>%
+  group_by(model) %>% summarise(auc.mean=mean(auc), auc.se=sd(auc))
+roc %>% inner_join(roc.auc, by='model') %>% 
+  filter(str_detect(model, '.')) %>% 
+  mutate(model.label=paste0(model, ' (', round(auc.mean, 3), ')')) %>% 
+  ggplot(aes(x=x, y=y, color=factor(fold))) + 
+  geom_line() + geom_abline(alpha=.5) + theme_bw() + facet_wrap(~model.label)
 
 
 
