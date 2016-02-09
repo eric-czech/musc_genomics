@@ -68,8 +68,8 @@ GetTrainingData <- function(cache, response.type, response.selector, min.mutatio
 }
 
 
-GetFoldDataGenerator <- function(preproc, response.type, linear.only, n.core=8, 
-                                 numeric.score.p=.0001, binary.score.p=.15){    
+GetFoldDataGenerator <- function(preproc, linear.only, n.core=8, 
+                                 sml.num.p=.0001, lrg.num.p=.15, sml.bin.p=.15, lrg.bin.p=.15){    
   function(X.train.all, y.train, X.test, y.test){
     # Apply feature selector
     loginfo('Running feature selection')
@@ -77,8 +77,12 @@ GetFoldDataGenerator <- function(preproc, response.type, linear.only, n.core=8,
     X.dim <- dim(X.train.all)
     c.numeric <- c(GetFeatures(X.train.all, 'cn'), GetFeatures(X.train.all, 'ge'))
     c.binary <- GetFeatures(X.train.all, 'mu')
-    X.train.sml <- ApplyFeatureFilter(X.train.all, y.train, c.numeric, c.binary, response.type, linear.only,
-                                      numeric.score.p=numeric.score.p, binary.score.p=binary.score.p)
+    
+    # Note that feature selection is done using only numeric (not binary) responses
+    X.train.sml <- ApplyFeatureFilter(X.train.all, y.train, c.numeric, c.binary, 'numeric', linear.only,
+                                      numeric.score.p=sml.num.p, binary.score.p=sml.bin.p)
+    X.train.lrg <- ApplyFeatureFilter(X.train.all, y.train, c.numeric, c.binary, 'numeric', linear.only,
+                                      numeric.score.p=lrg.num.p, binary.score.p=lrg.bin.p)
     
     # Removing zero-variance features
     # X.train.sml <- ApplyZeroVarianceFilter(X.train.sml)
@@ -86,18 +90,20 @@ GetFoldDataGenerator <- function(preproc, response.type, linear.only, n.core=8,
     
     # Apply preprocessing to feature subset
     loginfo('Running preprocessing')
-    pp.all <- preProcess(X.train.all, method=preproc)
+    pp.lrg <- preProcess(X.train.lrg, method=preproc)
     pp.sml <- preProcess(X.train.sml, method=preproc)
-    X.train.all <- predict(pp.all, X.train.all)
+    X.train.lrg <- predict(pp.lrg, X.train.lrg)
     X.train.sml <- predict(pp.sml, X.train.sml)
-    X.test.all  <- predict(pp.all, X.test)
+    X.test.lrg  <- predict(pp.lrg, X.test[,names(X.train.lrg)])
     X.test.sml  <- predict(pp.sml, X.test[,names(X.train.sml)])
     
+    bin.outcome <- function(y) factor((sign(y) + 1) * .5, levels=c(0, 1), labels=c('neg', 'pos'))
     list(
-      preproc=list(pp.all=pp.all, pp.sml=pp.sml),
-      X.train.sml=X.train.sml, X.train.all=X.train.all,
-      X.test.sml=X.test.sml, X.test.all=X.test.all,
-      y.train=y.train, y.test=y.test
+      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml),
+      X.train.sml=X.train.sml, X.train.lrg=X.train.lrg,
+      X.test.sml=X.test.sml, X.test.lrg=X.test.lrg,
+      y.train=y.train, y.test=y.test,
+      y.train.bin=bin.outcome(y.train), y.test.bin=bin.outcome(y.test.bin)
     )
   }
 }
