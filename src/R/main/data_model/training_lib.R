@@ -11,24 +11,7 @@ lib('gam')
 lib('glmnet')
 lib('kernlab')
 
-.anovaScore <- function(x, y) {
-  pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], silent = TRUE)
-  if (any(class(pv) == "try-error") || is.na(pv) || is.nan(pv)) 
-    pv <- 0 # Return 0 on error so no potentially good predictors are lost
-  pv
-}
 
-.gamScore <- function(x, y){
-  browser()
-  pv <- try(anova(gam::gam(y ~ s(x)))[2, "Pr(F)"], 
-            silent = TRUE)
-  if (any(class(pv) == "try-error")) 
-    pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], 
-              silent = TRUE)
-  if (any(class(pv) == "try-error") || is.na(pv) || is.nan(pv)) 
-    pv <- 0 # Return 0 on error so no potentially good predictors are lost
-  pv
-}
 
 GetFeatureSelector <- function(num.threshold=.05, bin.threshold=.05){
   res <- caretSBF
@@ -47,9 +30,9 @@ ScaleVector <- function(d){
   (d - mean(d, na.rm = T)) / (sd(d, na.rm=T))
 }
 
-GetGlmnetLambda <- function(X, y, alpha=.01){
+GetGlmnetLambda <- function(X, y, alpha=.01, family='gaussian'){
   #' Calculates estimated, optimal values for lambda glmnet parameter
-  init <- glmnet(as.matrix(X), y, family = 'gaussian', nlambda = 100, alpha = alpha)
+  init <- glmnet(as.matrix(X), y, nlambda = 100, alpha = alpha, family=family)
   lambda <- unique(init$lambda)
   lambda <- lambda[-c(1, length(lambda))]
   lambda <- lambda[1:length(lambda)]
@@ -85,16 +68,17 @@ GetTrainingData <- function(cache, response.type, response.selector, min.mutatio
 }
 
 
-GetFoldDataGenerator <- function(preproc){    
+GetFoldDataGenerator <- function(preproc, response.type, linear.only, n.core=8, 
+                                 numeric.score.p=.0001, binary.score.p=.15){    
   function(X.train.all, y.train, X.test, y.test){
     # Apply feature selector
     loginfo('Running feature selection')
-    registerDoMC(8)
+    registerDoMC(n.core)
     X.dim <- dim(X.train.all)
     c.numeric <- c(GetFeatures(X.train.all, 'cn'), GetFeatures(X.train.all, 'ge'))
     c.binary <- GetFeatures(X.train.all, 'mu')
-    X.train.sml <- ApplyFeatureFilter(X.train.all, y.train, c.numeric, c.binary,
-                                      numeric.score.p=.0001, binary.score.p=.15)
+    X.train.sml <- ApplyFeatureFilter(X.train.all, y.train, c.numeric, c.binary, response.type, linear.only,
+                                      numeric.score.p=numeric.score.p, binary.score.p=binary.score.p)
     
     # Removing zero-variance features
     # X.train.sml <- ApplyZeroVarianceFilter(X.train.sml)
@@ -118,6 +102,15 @@ GetFoldDataGenerator <- function(preproc){
   }
 }
 
+CreateFoldIndex <- function(y, index, level){
+  if (level == 1) # Outer folds should be returned for training set, not test set
+    createFolds(y, k = 10, returnTrain = T)
+  else if (level == 2) # Inner folds should be partioned the same as above
+    createFolds(y[index], k=10, returnTrain = T)
+  else
+    stop(sprintf('Folds at level %s not supported', level))
+}
+
 GetDataSummarizer <- function(){
   function(d){
     gfl <- function(d, t) length(GetFeatures(d, t))
@@ -126,4 +119,19 @@ GetDataSummarizer <- function(){
     logdebug('Expression features : %s --> %s', gfl(d$X.train.all, 'ge'), gfl(d$X.train.sml, 'ge'))
     logdebug('Copy Number features: %s --> %s', gfl(d$X.train.all, 'cn'), gfl(d$X.train.sml, 'cn'))
   }
+}
+
+GetPLSModel <- function(){
+  plsModel <- getModelInfo(model = "pls", regex = FALSE)[[1]]
+  plsModel$fit <- function(x, y, wts, param, lev, last, classProbs, ...) {   
+    out <- if(is.factor(y)){
+      plsda(x, y, method = "oscorespls", ncomp = param$ncomp, model=F, ...)
+    } else {
+      dat <- if(is.data.frame(x)) x else as.data.frame(x)
+      dat$.outcome <- y
+      plsr(.outcome ~ ., data = dat, method = "oscorespls", ncomp = param$ncomp, ...)
+    }
+    out
+  }
+  plsModel
 }

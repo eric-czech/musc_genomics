@@ -86,9 +86,9 @@ GetFeatures <- function(d, type){
   names(d)[str_detect(names(d), sprintf('^%s.', type))]
 }
 
-ApplyFeatureFilter <- function(X, y, numeric.features, binary.features, 
+ApplyFeatureFilter <- function(X, y, numeric.features, binary.features, response.type, linear.only,
                                numeric.score.p=.05, binary.score.p=.05){
-  f.scores <- GetUnivariateScores(X, y, numeric.features, binary.features)
+  f.scores <- GetUnivariateScores(X, y, numeric.features, binary.features, response.type, linear.only)
   rm.numeric <- f.scores %>% filter(type=='numeric' & score > numeric.score.p) %>% .$feature
   rm.binary  <- f.scores %>% filter(type=='binary' & score > binary.score.p) %>% .$feature  
   X %>% select(-one_of(c(rm.binary, rm.numeric)))

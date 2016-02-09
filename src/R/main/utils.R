@@ -1,10 +1,18 @@
 library(devtools)
-#source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/common/R/utils.R')
-source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/ml/R/metrics.R')
-#source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/common/R/cache.R')
+
 source('~/repos/portfolio/functional/common/R/utils.R')
+#source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/common/R/utils.R')
+
+# Load these in this order to avoid warning messages from plyr package
+lib('plyr')
+lib('dplyr')
+
 source('~/repos/portfolio/functional/common/R/cache.R')
-#source('~/repos/portfolio/functional/ml/R/metrics.R')
+#source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/common/R/cache.R')
+
+source('~/repos/portfolio/functional/ml/R/metrics.R')
+#source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/ml/R/metrics.R')
+
 
 lib('logging')
 basicConfig(loglevels['DEBUG'])
