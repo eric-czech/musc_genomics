@@ -8,6 +8,7 @@
 #'-----------------------------------------------------------------------------
 source('utils.R')
 source('data_model/training_lib.R')
+source('data_model/training_models.R')
 source('~/repos/portfolio/functional/ml/R/trainer.R')
 source('~/repos/portfolio/functional/ml/R/results.R')
 lib('MASS')
@@ -54,7 +55,7 @@ trainer.i1 <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'),
                    cache.project=paste0(RESPONSE_TYPE, '.all'), seed=SEED)
 trainer.i1$generateFoldIndex(y, CreateFoldIndex)
 fold.data.gen <- GetFoldDataGenerator(preproc, F, n.core=8, 
-                  sml.num.p=.0001, lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15)
+                    sml.num.p=.0001, lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15)
 trainer.i1$generateFoldData(X, y, fold.data.gen, GetDataSummarizer())
 
 predict.reg.data.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)]) }
@@ -63,6 +64,7 @@ predict.bin.data.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$
 predict.bin.data.lrg <- function(fit, d, i){ predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='prob')[,2] }
 test.bin <- function(d) d$y.test.bin
 test.reg <- function(d) d$y.test
+
 predict.browser <- function(fit, d, i){ browser() }
 setLevels <- function(x, lvls){ levels(x) <- lvls; x }
 

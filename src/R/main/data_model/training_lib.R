@@ -139,7 +139,6 @@ GetDataSummarizer <- function(){
   }
 }
 
-
 GetResultSummary <- function(d){
   pred <- prediction(d$y.pred, d$y.test, label.ordering=c('neg', 'pos'))
   roc <- performance(pred, 'tpr', 'fpr') 
@@ -168,3 +167,4 @@ GetPLSModel <- function(){
   }
   plsModel
 }
+
