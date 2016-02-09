@@ -8,6 +8,7 @@
 #'-----------------------------------------------------------------------------
 source('utils.R')
 source('data_model/training_lib.R')
+source('data_model/training_models.R')
 source('~/repos/portfolio/functional/ml/R/trainer.R')
 lib('MASS')
 lib('caret')
@@ -59,7 +60,6 @@ trainer.rl$generateFoldIndex(y, CreateFoldIndex)
 rl.data.gen <- GetFoldDataGenerator(preproc, 'numeric', F, n.core=8, numeric.score.p=.0001, binary.score.p=.15)
 trainer.rl$generateFoldData(X, y, rl.data.gen, GetDataSummarizer())
 
-
 trainer.rs <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'), 
                    cache.project=paste0(RESPONSE_TYPE, '.reg.sm'), seed=SEED)
 trainer.rs$generateFoldIndex(y, CreateFoldIndex)
@@ -71,7 +71,6 @@ trainer.bs <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'),
 trainer.bs$generateFoldIndex(y.bin, CreateFoldIndex)
 bs.data.gen <- GetFoldDataGenerator(preproc, 'binary', T, n.core=1, numeric.score.p=.01, binary.score.p=.15)
 trainer.bs$generateFoldData(X, y.bin, bs.data.gen, GetDataSummarizer())
-
 
 predict.reg.data <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)]) }
 predict.bin.data <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,2] }
