@@ -100,8 +100,10 @@ GetHoldOutPrediction <- function(model, X, y, X.ho, y.ho){
   data.frame(model=model$name, y.pred=res$y.pred, y.test=res$y.test)
 }
 
-models <- list(bin.model.rf, bin.model.svm.radial.sml, bin.model.pam, 
-               bin.model.knn, bin.model.enet, bin.model.lasso, bin.model.ridge)
+models <- list(
+  bin.model.rf, bin.model.svm.radial.sml, bin.model.pam, bin.model.pls, 
+  bin.model.knn, bin.model.enet, bin.model.lasso, bin.model.ridge
+)
 ho.fit <- trainer.i1$holdout(models, X, y, X.ho, y.ho, fold.data.gen)
 
 ens.models.ho <- lapply(ho.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(ho.fit, function(m) m$model))

@@ -156,10 +156,12 @@ bin.model.knn.pca <- list(
   }
 )
 
+
 bin.model.knn <- list(
-  name='bin.knn', predict=predict.bin.data.sml, test=test.bin,
+  name='bin.knn', predict=predict.bin.data.sml, 
+  test=test.bin,
   train=function(d, idx, ...){
-    registerDoMC(6)
+    registerDoMC(1)
     train(
       d$X.train.sml, d$y.train.bin, 
       method='knn', preProcess='zv', metric=bin.tgt.metric, 
