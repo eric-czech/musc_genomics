@@ -1,0 +1,40 @@
+---
+title: "Results (Iteration 1)"
+output: html_document
+#output: ioslides_presentation
+widescreen: yes
+---
+
+```{r init, echo=FALSE, message=FALSE, warning=FALSE}
+source('utils.R')
+RESPONSE_TYPE <- 'cosmic'
+cache <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
+cache$get('')
+```
+
+<br><br>
+<hr>
+# Classification Results
+
+## Models Considered {.smaller}
+
+Models tried so far:
+- ElasticNet (+ ridge/lasso)
+- SVM (radial)
+- PAM aka "Predictive Analysis for Microarrays" (basically shrunken centroids)
+- kNN (also w/ PCA preprocessing)
+- Partial Least Squares
+- Random Forest
+
+In the works:
+- [SCRDA](https://web.stanford.edu/~hastie/Papers/RDA-6.pdf) - This looks promising
+- RDA (a simpler version of the above)
+- GBM / ExtraTrees
+
+## CV Results
+
+```{r, echo=F}
+cache$
+```
+
+## Thresholds w/ No Covariates {.smaller}

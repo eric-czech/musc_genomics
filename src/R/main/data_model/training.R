@@ -17,11 +17,13 @@ lib('doMC')
 lib('iterators')
 lib('caretEnsemble')
 lib('ROCR')
+lib('plotly')
 SEED <- 1024
 RESPONSE_TYPE <- 'cosmic' # This will include ctd2 as well at some point
 RESPONSE_SELECTOR <- function(d){ 
   d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)
 }
+RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
 select <- dplyr::select
 
 d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
@@ -43,7 +45,7 @@ y <- d.prep.tr[,'response']; y.bin <- DichotomizeOutcome(y)
 # y <- y[1:25]
 
 trainer.i1 <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'), 
-                   cache.project=paste0(RESPONSE_TYPE, '.all'), seed=SEED)
+                   cache.project=RESPONSE_TYPE, seed=SEED)
 trainer.i1$generateFoldIndex(y, CreateFoldIndex)
 fold.data.gen <- GetFoldDataGenerator(preproc, F, n.core=8, 
                     sml.num.p=.0001, lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15)
@@ -56,6 +58,7 @@ bin.models <- list()
 
 # ShowBestTune(bin.models$gbm)
 
+# Complete
 bin.models$svm.radial.sml <- trainer.i1$train(bin.model.svm.radial.sml, enable.cache=T)
 bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=T)
 bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=T)
@@ -66,12 +69,10 @@ bin.models$lasso <- trainer.i1$train(bin.model.lasso, enable.cache=T)
 bin.models$ridge <- trainer.i1$train(bin.model.ridge, enable.cache=T)
 bin.models$enet <- trainer.i1$train(bin.model.enet, enable.cache=T)
 
-
+# Under Construction
 bin.models$gbm <- trainer.i1$train(bin.model.gbm, enable.cache=F)
 bin.models$rda <- trainer.i1$train(bin.model.rda, enable.cache=F)
 bin.models$et <- trainer.i1$train(bin.model.et, enable.cache=F)
-
-
 
 # bin.models$nb <- trainer.i1$train(bin.model.nb)
 # bin.models$rf <- trainer.i1$train(bin.model.rf)
@@ -94,28 +95,21 @@ bin.models$bin.model.ens1 <- trainer.i1$train(bin.model.ens1, enable.cache=F)
 X.ho <- d.prep.ho %>% select(-response, -tumor_id); 
 y.ho <- d.prep.ho[,'response']; y.ho.bin <- DichotomizeOutcome(y.ho)
 
-GetHoldOutPrediction <- function(model, X, y, X.ho, y.ho){
-  loginfo('Creating hold out predictions for model "%s"', model$name)
-  res <- trainer.i1$holdout(model, X, y, X.ho, y.ho, fold.data.gen)
-  data.frame(model=model$name, y.pred=res$y.pred, y.test=res$y.test)
-}
-
 models <- list(
   bin.model.rf, bin.model.svm.radial.sml, bin.model.pam, bin.model.pls, 
   bin.model.knn, bin.model.enet, bin.model.lasso, bin.model.ridge
 )
-ho.fit <- trainer.i1$holdout(models, X, y, X.ho, y.ho, fold.data.gen)
+# trainer.i1$getCache()$invalidate('holdout_fit')
+ho.fit <- trainer.i1$getCache()$load('holdout_fit', function(){
+  trainer.i1$holdout(models, X, y, X.ho, y.ho, fold.data.gen) 
+})
 
 ens.models.ho <- lapply(ho.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(ho.fit, function(m) m$model))
 bin.model.ens1.ho <- GetBinEnsemble(ens.models.ho, 'bin.ens1.ho')
 ens.ho.fit <- trainer.i1$holdout(list(bin.model.ens1.ho), X, y, X.ho, y.ho, fold.data.gen)
 
-ho.preds <- foreach(p=c(ho.fit, ens.ho.fit)) %do% {
-  data.frame(model=p$model, y.pred=p$y.pred, y.test=p$y.test)
-}
-ho.preds <- foreach(p=ho.fit) %do% {
-  data.frame(model=p$model, y.pred=p$y.pred, y.test=p$y.test)
-}
+#ho.preds <- foreach(p=c(ho.fit, ens.ho.fit)) %do% data.frame(model=p$model, y.pred=p$y.pred, y.test=p$y.test)
+ho.preds <- foreach(p=ho.fit) %do% data.frame(model=p$model, y.pred=p$y.pred, y.test=p$y.test)
 
 # ho.data <- bs.data.gen(X.ho, y.ho.bin, X.ho, y.ho.bin)
 
@@ -123,53 +117,42 @@ ho.preds <- foreach(p=ho.fit) %do% {
 
 ## CV Results
 
-res <- SummarizeResults(bin.models, fold.summary=GetResultSummary, model.summary=GetResultSummary)
-
-model.perf <- res$fold.summary %>% group_by(model, fold) %>%
-  summarise_each(funs(head(., 1)), one_of(c('auc', 'acc.max', 'acc.cut'))) %>%
-  ungroup %>% group_by(model) %>% 
-  summarise_each(funs(mean, sd), one_of(c('auc', 'acc.max', 'acc.cut')))
+cv.res <- SummarizeResults(bin.models, fold.summary=GetResultSummary, model.summary=GetResultSummary)
+RESULT_CACHE$store('cv_model_perf', cv.res)
 
 # ROC curves per-fold
-res$fold.summary %>% 
-  select(model, fold, x, y, t) %>%
-  inner_join(model.perf, by='model') %>%
-  filter(str_detect(model, '.')) %>% 
-  mutate(model.label=paste0(model, ' (', round(auc_mean, 3), ')')) %>% 
-  ggplot(aes(x=x, y=y, color=factor(fold))) + 
-  geom_line() + geom_abline(alpha=.5) + theme_bw() + facet_wrap(~model.label)
+PlotPerFoldROC(cv.res) 
 
 # ROC curves across folds
-library(plotly)
-p <- res$model.summary %>%
-  select(model, x, y, t) %>%
-  inner_join(model.perf, by='model') %>%
-  filter(str_detect(model, '.')) %>% 
-  mutate(model.label=paste0(model, ' (', round(auc_mean, 3), ')')) %>% 
-  ggplot(aes(x=x, y=y, color=factor(model.label))) + 
-  geom_line() + geom_abline(alpha=.5) + theme_bw() 
-p
-#ggplotly(p)
+PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
 
 # AUC ranges by model
-model.perf %>% arrange(auc_mean) %>%
-  mutate(model=factor(model, levels=model)) %>%
-  ggplot(aes(x=model, y=auc_mean, ymin=auc_mean - auc_sd, ymax=auc_mean + auc_sd, color=model)) +
-  geom_pointrange() + coord_flip() + theme_bw() 
+PlotFoldAUC(cv.res)
 
 
 ## Holdout results
 
-ho.model.perf <- foreach(preds=ho.preds, .combine=rbind) %do% {
+# Calibration checks
+# do.call('rbind', ho.preds) %>% group_by(model) %>% do({
+#   d <- .
+#   d %>% mutate(bin=cut(y.pred, breaks=seq(0, 1, by=.1), include.lowest=T)) %>%
+#     group_by(bin) %>% summarise(pct.pos=sum(y.test == 'pos')/n(), pct.neg=sum(y.test == 'neg')/n(), n=n())
+# }) %>% ggplot(aes(x=as.integer(bin), y=pct.pos, color=model)) + geom_line()
+
+
+ho.res <- foreach(preds=ho.preds, .combine=rbind) %do% {
   GetResultSummary(preds) %>% mutate(model=preds$model[1])
 }
+RESULT_CACHE$store('ho_model_perf', ho.res)
 
-ho.model.perf %>% group_by(model) %>% do({head(., 1)}) %>%
+PlotHoldOutMetric(ho.res, 'auc')
+
+ho.res %>% group_by(model) %>% do({head(., 1)}) %>%
   select(auc, acc.max, model) %>% melt(id.vars = 'model') %>%
   ggplot(aes(x=model, y=value, fill=model)) + geom_bar(position='dodge', stat='identity') +
   facet_wrap(~variable)
 
-ho.model.perf %>%
+ho.res %>%
   select(model, x, y, t) %>%
   inner_join(ho.model.perf %>% group_by(model) %>% summarise(auc=auc[1]), by='model') %>% 
   mutate(model.label=paste0(model, ' (', round(auc, 3), ')')) %>% 
