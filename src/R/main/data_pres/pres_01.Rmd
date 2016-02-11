@@ -1,24 +1,51 @@
 ---
 title: "Results (Iteration 1)"
+author: Eric Czech
 output: html_document
 #output: ioslides_presentation
 widescreen: yes
+date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
+knit: (function(inputFile, encoding) { rmarkdown::render(
+        inputFile, encoding=encoding, 
+        output_file=file.path(dirname(inputFile), 'pres_01_output', 'cosmic', 'pres.doc.html')) })
 ---
 
 ```{r init, echo=FALSE, message=FALSE, warning=FALSE}
-source('utils.R')
+library(knitr)
+opts_chunk$set(root.dir = '~/repos/musc_genomics/src/R/main/data_pres/test')
+setwd('~/repos/musc_genomics/src/R/main')
+source('data_model/training_viz.R')
+lib('plotly')
 RESPONSE_TYPE <- 'cosmic'
 cache <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
-cache$get('')
+
+cv.res <- cache$get('cv_model_perf')
+ho.res <- cache$get('ho_model_perf')
+
+p.fold.roc <- PlotPerFoldROC(cv.res)
+p.cv.roc <- PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
+p.ho.roc <- PlotHoldOutROC(ho.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
+
+d.res <- cache$get('response_data')
+p.res.dist <- PlotResponseDist(RESPONSE_TYPE, d.res)
+
+p.cv.auc <- PlotFoldMetric(cv.res, 'auc') + ylim(.4, .9)
+p.ho.auc <- PlotHoldOutMetric(ho.res, 'auc') + ylim(.4, .9)
+
+p.cv.acc <- PlotFoldMetric(cv.res, 'acc.max') + ylim(.6, .8)
+p.ho.acc <- PlotHoldOutMetric(ho.res, 'acc.max') + ylim(.6, .8)
+
 ```
 
 <br><br>
 <hr>
+
 # Classification Results
 
 ## Models Considered {.smaller}
 
 Models tried so far:
+
 - ElasticNet (+ ridge/lasso)
 - SVM (radial)
 - PAM aka "Predictive Analysis for Microarrays" (basically shrunken centroids)
@@ -27,14 +54,57 @@ Models tried so far:
 - Random Forest
 
 In the works:
+
 - [SCRDA](https://web.stanford.edu/~hastie/Papers/RDA-6.pdf) - This looks promising
 - RDA (a simpler version of the above)
 - GBM / ExtraTrees
 
-## CV Results
+## Data Prep and Partitioning {.smaller}
 
-```{r, echo=F}
-cache$
+- So far, only COSMIC ic 50 scores used as a response (gives 410 observations with 36,791 features)
+- Only mutations that occur at least 3 times used
+- Training set created as random sample of size N * .8
+- Hold out set was remaining 20% of sample
+- To run classification, response split at mean; response distribution:
+
+```{r, echo=FALSE, fig.align='center', fig.width=4, fig.height=4}
+p.res.dist
 ```
 
-## Thresholds w/ No Covariates {.smaller}
+## CV Results (ROC)
+
+ROC curves across models and folds on training data: 
+
+```{r, echo=FALSE, fig.align='center', fig.width=10, fig.height=8}
+p.fold.roc
+```
+
+## CV ROC (combined) {.smaller} 
+
+ROC curves combined across folds (should resemble holdout ROC):
+
+```{r, echo=FALSE, fig.align='center', fig.width=9, fig.height=5}
+p.cv.roc
+```
+
+## Holdout ROC {.smaller}
+
+ROC curves by model on hold out data:
+
+```{r, echo=FALSE, fig.align='center', fig.width=9, fig.height=5}
+p.ho.roc
+```
+
+## Accuracy Summary
+
+```{r, echo=FALSE, fig.align='center', fig.width=8, fig.height=3}
+p.cv.acc
+p.ho.acc
+```
+
+## AUC Summary
+
+```{r, echo=FALSE, fig.align='center', fig.width=8, fig.height=3}
+p.cv.auc
+p.ho.auc
+```

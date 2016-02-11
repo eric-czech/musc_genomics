@@ -15,6 +15,7 @@ lib('cgdsr')
 lib('foreach')
 lib('iterators')
 lib('reshape2')
+select <- dplyr::select
 
 
 #--------------------------------------#

@@ -9,6 +9,7 @@
 source('utils.R')
 source('data_model/training_lib.R')
 source('data_model/training_models.R')
+source('data_model/training_viz.R')
 source('~/repos/portfolio/functional/ml/R/trainer.R')
 source('~/repos/portfolio/functional/ml/R/results.R')
 lib('MASS')
@@ -23,6 +24,8 @@ RESPONSE_TYPE <- 'cosmic' # This will include ctd2 as well at some point
 RESPONSE_SELECTOR <- function(d){ 
   d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)
 }
+# d <- GetPreparedData(TRAIN_CACHE)
+
 RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
 select <- dplyr::select
 
@@ -63,7 +66,7 @@ bin.models$svm.radial.sml <- trainer.i1$train(bin.model.svm.radial.sml, enable.c
 bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=T)
 bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=T)
 bin.models$pam <- trainer.i1$train(bin.model.pam, enable.cache=T)
-bin.models$pls <- trainer.i1$train(bin.model.pls, enable.cache=T)
+bin.models$pls <- trainer.i1$train(bin.model.pls, enable.cache=F)
 bin.models$rf <- trainer.i1$train(bin.model.rf, enable.cache=T)
 bin.models$lasso <- trainer.i1$train(bin.model.lasso, enable.cache=T)
 bin.models$ridge <- trainer.i1$train(bin.model.ridge, enable.cache=T)
@@ -115,19 +118,24 @@ ho.preds <- foreach(p=ho.fit) %do% data.frame(model=p$model, y.pred=p$y.pred, y.
 
 ##### Classification Results ##### 
 
+## Response Analysis (determining classification cutoffs)
+PlotResponseDist(RESPONSE_TYPE, d.prep[,'response'])
+RESULT_CACHE$store('response_data', d.prep[,'response'])
+
 ## CV Results
 
 cv.res <- SummarizeResults(bin.models, fold.summary=GetResultSummary, model.summary=GetResultSummary)
 RESULT_CACHE$store('cv_model_perf', cv.res)
 
 # ROC curves per-fold
-PlotPerFoldROC(cv.res) 
+PlotPerFoldROC(cv.res)
 
 # ROC curves across folds
 PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
 
 # AUC ranges by model
-PlotFoldAUC(cv.res)
+PlotFoldMetric(cv.res, 'auc')
+PlotFoldMetric(cv.res, 'acc.max')
 
 
 ## Holdout results
@@ -145,19 +153,10 @@ ho.res <- foreach(preds=ho.preds, .combine=rbind) %do% {
 }
 RESULT_CACHE$store('ho_model_perf', ho.res)
 
-PlotHoldOutMetric(ho.res, 'auc')
+PlotHoldOutMetric(ho.res, 'auc') 
+PlotHoldOutMetric(ho.res, 'acc.max') 
 
-ho.res %>% group_by(model) %>% do({head(., 1)}) %>%
-  select(auc, acc.max, model) %>% melt(id.vars = 'model') %>%
-  ggplot(aes(x=model, y=value, fill=model)) + geom_bar(position='dodge', stat='identity') +
-  facet_wrap(~variable)
-
-ho.res %>%
-  select(model, x, y, t) %>%
-  inner_join(ho.model.perf %>% group_by(model) %>% summarise(auc=auc[1]), by='model') %>% 
-  mutate(model.label=paste0(model, ' (', round(auc, 3), ')')) %>% 
-  ggplot(aes(x=x, y=y, color=factor(model.label))) + 
-  geom_line() + geom_abline(alpha=.5) + theme_bw() 
+PlotHoldOutROC(ho.res)
 
 
 ##### Regression Models #####

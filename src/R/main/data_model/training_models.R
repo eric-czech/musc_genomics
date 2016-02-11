@@ -19,9 +19,25 @@ ShowBestTune <- function(model){ sapply(model, function(m) m$fit$bestTune )}
 predict.reg.data.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)]) }
 predict.reg.data.lrg <- function(fit, d, i){ predict(fit, d$X.test.lrg[,names(d$X.train.lrg)]) }
 predict.reg.ens.sml  <- function(fit, d, i){ predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]) }
+
 predict.bin.data.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,2] }
 predict.bin.data.lrg <- function(fit, d, i){ predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='prob')[,2] }
 predict.bin.ens.sml  <- function(fit, d, i){ predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]) }
+
+
+# predict.bin.data.sml <- function(fit, d, i){ list(
+#   prob=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,2], 
+#   class=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='raw')
+# )}
+# predict.bin.data.lrg <- function(fit, d, i){ list(
+#   prob=predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='prob')[,2],
+#   class=predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='raw')
+# )}
+# predict.bin.ens.sml  <- function(fit, d, i){ list(
+#   prob=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]),
+#   class=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)], type='raw')
+# )}
+
 predict.browser <- function(fit, d, i){ browser() }
 
 test.bin <- function(d) d$y.test.bin
@@ -121,12 +137,12 @@ bin.model.svm.radial.sml <- list(
 bin.model.pls <- list(
   name='bin.pls', predict=predict.bin.data.sml, test=test.bin,
   train=function(d, idx, ...){
-    registerDoMC(3)
+    registerDoMC(1)
     train(
       d$X.train.sml, d$y.train.bin, 
       method=GetPLSModel(), preProcess='zv', metric=bin.tgt.metric, 
       trControl = bin.trctrl(idx, classProbs=T),
-      tuneGrid=data.frame(ncomp=c(1,2,3,6,9,12,15,18,25))
+      tuneGrid=data.frame(ncomp=c(1,2,3,4,5,6,9,12,15,18,25))
     )
   }
 )
@@ -225,11 +241,11 @@ bin.model.gbm <- list(
 bin.model.et <- list(
   name='bin.et', predict=predict.bin.data.sml, test=test.bin,
   train=function(d, idx, ...){
-    registerDoMC(4)
+    registerDoMC(1)
     train(
       d$X.train.sml, d$y.train.bin, 
       method='extraTrees', preProcess='zv', metric=bin.tgt.metric, 
-      tuneLength=5, trControl = bin.trctrl(idx, classProbs=T, verboseIter=T)
+      tuneLength=1, trControl = bin.trctrl(idx, classProbs=T, verboseIter=T)
     )
   }
 )

@@ -1,3 +1,7 @@
+source('utils.R')
+lib('stringr')
+lib('ggplot2')
+lib('reshape2')
 
 GetCVPerfSummary <- function(cv.res){
   cv.res$fold.summary %>% group_by(model, fold) %>%
@@ -7,12 +11,13 @@ GetCVPerfSummary <- function(cv.res){
     ungroup
 }
 
-PlotFoldAUC <- function(cv.res){
-  GetCVPerfSummary(cv.res) %>% arrange(auc_mean) %>%
-    mutate(model=factor(model, levels=model)) %>%
-    ggplot(aes(x=model, y=auc_mean, ymin=auc_mean - auc_sd, ymax=auc_mean + auc_sd, color=model)) +
-    geom_pointrange() + coord_flip() + theme_bw() +
-    ggtitle('CV AUC Estimates')
+PlotFoldMetric <- function(cv.res, metric){
+  GetCVPerfSummary(cv.res) %>% 
+    rename_(v_mean=paste0(metric, '_mean'), v_sd=paste0(metric, '_sd')) %>%
+    arrange(v_mean) %>% mutate(model=factor(model, levels=model)) %>%
+    ggplot(aes(x=model, y=v_mean, ymin=v_mean - v_sd, ymax=v_mean + v_sd, color=model)) +
+    geom_pointrange() + coord_flip() + theme_bw() + ylab(metric) + 
+    ggtitle(sprintf('CV %s Estimates', metric))
 }
 
 PlotPerFoldROC <- function(cv.res){
@@ -31,7 +36,7 @@ PlotPerFoldROC <- function(cv.res){
 PlotAllFoldROC <- function(cv.res){
   cv.res$model.summary %>%
     select(model, x, y, t) %>%
-    inner_join(model.perf, by='model') %>%
+    inner_join(GetCVPerfSummary(cv.res), by='model') %>%
     filter(str_detect(model, '.')) %>% 
     mutate(model.label=paste0(model, ' (', round(auc_mean, 3), ')')) %>% 
     ggplot(aes(x=x, y=y, color=factor(model.label))) + 
@@ -43,8 +48,28 @@ PlotAllFoldROC <- function(cv.res){
 PlotHoldOutMetric <- function(ho.res, metric){
   ho.res %>% group_by(model) %>% do({head(., 1)}) %>%
     select(one_of(metric), model) %>% melt(id.vars = 'model') %>%
-    arrange(desc(value)) %>% mutate(model=factor(model, levels=model)) %>%
-    ggplot(aes(x=model, y=value, color=model)) + 
-    geom_point(stat='identity', size=3) + theme_bw()
+    arrange(value) %>% mutate(model=factor(model, levels=model)) %>%
+    ggplot(aes(x=model, y=value, color=model)) + ylab(metric) + 
+    geom_point(stat='identity', size=3) + theme_bw() + coord_flip() + 
+    ggtitle(sprintf('Holdout %s', metric))
+}
+
+PlotHoldOutROC <- function(ho.res){
+  ho.res %>%
+    select(model, x, y, t) %>%
+    inner_join(ho.res %>% group_by(model) %>% summarise(auc=auc[1]), by='model') %>% 
+    mutate(model.label=paste0(model, ' (', round(auc, 3), ')')) %>% 
+    ggplot(aes(x=x, y=y, color=factor(model.label))) + 
+    geom_line() + geom_abline(alpha=.5) + theme_bw() + 
+    xlab('False Positive Rate') + ylab('True Positive Rate') +
+    ggtitle('Holdout ROC')
+    
+}
+
+PlotResponseDist <- function(response.type, response.data){
+  data.frame(r=response.data) %>% ggplot(aes(x=r)) + 
+    geom_histogram(binwidth=.15, alpha=.3) + 
+    geom_density(aes(y=0.15*..count..)) + theme_bw() + 
+    ggtitle(sprintf('%s Response Distribution', response.type))
 }
 
