@@ -66,15 +66,15 @@ bin.models <- list()
 # ShowBestTune(bin.models$gbm)
 
 # Complete
-bin.models$svm.radial.sml <- trainer.i1$train(bin.model.svm.radial.sml, enable.cache=T)
-bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=T)
-bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=T)
-bin.models$pam <- trainer.i1$train(bin.model.pam, enable.cache=T)
+bin.models$svm.radial.sml <- trainer.i1$train(bin.model.svm.radial.sml, enable.cache=F)
+bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=F)
+bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=F)
+bin.models$pam <- trainer.i1$train(bin.model.pam, enable.cache=F)
 bin.models$pls <- trainer.i1$train(bin.model.pls, enable.cache=F)
-bin.models$rf <- trainer.i1$train(bin.model.rf, enable.cache=T)
-bin.models$lasso <- trainer.i1$train(bin.model.lasso, enable.cache=T)
-bin.models$ridge <- trainer.i1$train(bin.model.ridge, enable.cache=T)
-bin.models$enet <- trainer.i1$train(bin.model.enet, enable.cache=T)
+bin.models$rf <- trainer.i1$train(bin.model.rf, enable.cache=F)
+bin.models$lasso <- trainer.i1$train(bin.model.lasso, enable.cache=F)
+bin.models$ridge <- trainer.i1$train(bin.model.ridge, enable.cache=F)
+bin.models$enet <- trainer.i1$train(bin.model.enet, enable.cache=F)
 
 # Under Construction
 bin.models$gbm <- trainer.i1$train(bin.model.gbm, enable.cache=F)
@@ -116,7 +116,8 @@ bin.model.ens1.ho <- GetBinEnsemble(ens.models.ho, 'bin.ens1.ho')
 ens.ho.fit <- trainer.i1$holdout(list(bin.model.ens1.ho), X, y, X.ho, y.ho, fold.data.gen)
 
 #ho.preds <- foreach(p=c(ho.fit, ens.ho.fit)) %do% data.frame(model=p$model, y.pred=p$y.pred, y.test=p$y.test)
-ho.preds <- foreach(p=ho.fit) %do% data.frame(model=p$model, y.pred=p$y.pred, y.test=p$y.test)
+#ho.preds <- foreach(p=ho.fit) %do% data.frame(model=p$model, y.pred=p$y.pred, y.test=p$y.test)
+ho.preds <- ho.fit
 
 # ho.data <- bs.data.gen(X.ho, y.ho.bin, X.ho, y.ho.bin)
 
@@ -128,7 +129,7 @@ RESULT_CACHE$store('response_data', d.prep[,'response'])
 
 ## CV Results
 
-cv.res <- SummarizeResults(bin.models, fold.summary=GetResultSummary, model.summary=GetResultSummary)
+cv.res <- SummarizeTrainingResults(bin.models, T, fold.summary=GetResultSummary, model.summary=GetResultSummary)
 RESULT_CACHE$store('cv_model_perf', cv.res)
 
 # ROC curves per-fold
@@ -139,7 +140,7 @@ PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
 
 # AUC ranges by model
 PlotFoldMetric(cv.res, 'auc')
-PlotFoldMetric(cv.res, 'acc.max')
+PlotFoldMetric(cv.res, 'acc')
 
 
 ## Holdout results
@@ -151,6 +152,7 @@ PlotFoldMetric(cv.res, 'acc.max')
 #     group_by(bin) %>% summarise(pct.pos=sum(y.test == 'pos')/n(), pct.neg=sum(y.test == 'neg')/n(), n=n())
 # }) %>% ggplot(aes(x=as.integer(bin), y=pct.pos, color=model)) + geom_line()
 
+ho.res <- SummarizeTrainingResults(list(ho.preds), T, fold.summary=NULL, model.summary=GetResultSummary)
 
 ho.res <- foreach(preds=ho.preds, .combine=rbind) %do% {
   GetResultSummary(preds) %>% mutate(model=preds$model[1])
@@ -158,7 +160,7 @@ ho.res <- foreach(preds=ho.preds, .combine=rbind) %do% {
 RESULT_CACHE$store('ho_model_perf', ho.res)
 
 PlotHoldOutMetric(ho.res, 'auc') 
-PlotHoldOutMetric(ho.res, 'acc.max') 
+PlotHoldOutMetric(ho.res, 'acc') 
 
 PlotHoldOutROC(ho.res)
 

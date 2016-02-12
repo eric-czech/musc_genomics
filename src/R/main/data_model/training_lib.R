@@ -139,18 +139,18 @@ GetDataSummarizer <- function(){
   }
 }
 
+RESULT_METRICS <- c('auc', 'acc', 'tpr', 'tnr')
 GetResultSummary <- function(d){
-  pred <- prediction(d$y.pred, d$y.test, label.ordering=c('neg', 'pos'))
+  pred <- prediction(d$y.pred.prob, d$y.test, label.ordering=c('neg', 'pos'))
   roc <- performance(pred, 'tpr', 'fpr') 
   auc <- performance(pred, 'auc')
-  acc <- performance(pred, 'acc')
-  acc.max <- acc@y.values[[1]][which.max(acc@y.values[[1]])]
-  acc.cut <- acc@x.values[[1]][which.max(acc@y.values[[1]])]
+  acc <- sum(d$y.pred.class == d$y.test) / length(d$y.pred.class)
+  tpr <- sum(d$y.pred.class == d$y.test & d$y.test == 'pos') / sum(d$y.test == 'pos')
+  tnr <- sum(d$y.pred.class == d$y.test & d$y.test == 'neg') / sum(d$y.test == 'neg')
   data.frame(
     x=roc@x.values[[1]], y=roc@y.values[[1]], 
     t=roc@alpha.values[[1]], auc=auc@y.values[[1]],
-    acc.max=acc.max, acc.cut=acc.cut
+    acc=acc, tpr=tpr, tnr=tnr
   )
 }
-
 

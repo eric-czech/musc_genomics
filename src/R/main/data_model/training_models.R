@@ -20,23 +20,22 @@ predict.reg.data.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$
 predict.reg.data.lrg <- function(fit, d, i){ predict(fit, d$X.test.lrg[,names(d$X.train.lrg)]) }
 predict.reg.ens.sml  <- function(fit, d, i){ predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]) }
 
-predict.bin.data.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,2] }
-predict.bin.data.lrg <- function(fit, d, i){ predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='prob')[,2] }
-predict.bin.ens.sml  <- function(fit, d, i){ predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]) }
+# predict.bin.data.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,2] }
+# predict.bin.data.lrg <- function(fit, d, i){ predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='prob')[,2] }
+# predict.bin.ens.sml  <- function(fit, d, i){ predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]) }
 
-
-# predict.bin.data.sml <- function(fit, d, i){ list(
-#   prob=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,2], 
-#   class=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='raw')
-# )}
-# predict.bin.data.lrg <- function(fit, d, i){ list(
-#   prob=predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='prob')[,2],
-#   class=predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='raw')
-# )}
-# predict.bin.ens.sml  <- function(fit, d, i){ list(
-#   prob=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]),
-#   class=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)], type='raw')
-# )}
+predict.bin.data.sml <- function(fit, d, i){ list(
+  prob=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,2], 
+  class=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='raw')
+)}
+predict.bin.data.lrg <- function(fit, d, i){ list(
+  prob=predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='prob')[,2],
+  class=predict(fit, d$X.test.lrg[,names(d$X.train.lrg)], type='raw')
+)}
+predict.bin.ens.sml  <- function(fit, d, i){ list(
+  prob=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)]),
+  class=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)], type='raw')
+)}
 
 predict.browser <- function(fit, d, i){ browser() }
 
@@ -118,9 +117,9 @@ GetEnsembleModel <- function(models, name, test.selector, pred.fun){
 ##### Classification Models #####
 
 
-bin.model.lasso <- GetElasticNetModel('bin.lasso', 1, 1, 1)
-bin.model.ridge <- GetElasticNetModel('bin.ridge', 0, 0, 1)
-bin.model.enet <- GetElasticNetModel('bin.enet', .5, c(.001, seq(.1, .9, length.out=13), .999), 1)
+bin.model.lasso <- GetElasticNetModel('bin.lasso', 1, 1, 5)
+bin.model.ridge <- GetElasticNetModel('bin.ridge', 0, 0, 5)
+bin.model.enet <- GetElasticNetModel('bin.enet', .5, c(.001, seq(.1, .9, length.out=13), .999), 5)
 
 bin.model.svm.radial.sml <- list(
   name='bin.svm.radial.sml', predict=predict.bin.data.sml, test=test.bin,
@@ -129,7 +128,7 @@ bin.model.svm.radial.sml <- list(
     train(
       d$X.train.sml, d$y.train.bin,
       method='svmRadial', preProcess='zv', metric=bin.tgt.metric,
-      tuneLength=15, trControl = bin.trctrl(idx, classProbs=T)
+      tuneLength=25, trControl = bin.trctrl(idx, classProbs=T)
     )
   }
 )
@@ -137,7 +136,7 @@ bin.model.svm.radial.sml <- list(
 bin.model.pls <- list(
   name='bin.pls', predict=predict.bin.data.sml, test=test.bin,
   train=function(d, idx, ...){
-    registerDoMC(1)
+    registerDoMC(3)
     train(
       d$X.train.sml, d$y.train.bin, 
       method=GetPLSModel(), preProcess='zv', metric=bin.tgt.metric, 
@@ -177,7 +176,7 @@ bin.model.knn <- list(
   name='bin.knn', predict=predict.bin.data.sml, 
   test=test.bin,
   train=function(d, idx, ...){
-    registerDoMC(1)
+    registerDoMC(4)
     train(
       d$X.train.sml, d$y.train.bin, 
       method='knn', preProcess='zv', metric=bin.tgt.metric, 
@@ -189,7 +188,7 @@ bin.model.knn <- list(
 bin.model.pam <- list(
   name='bin.pam', predict=predict.bin.data.sml, test=test.bin,
   train=function(d, idx, ...){
-    registerDoMC(1)
+    registerDoMC(5)
     train(
       d$X.train.sml, d$y.train.bin, 
       method='pam', preProcess='zv', metric=bin.tgt.metric, 

@@ -1,13 +1,14 @@
 source('utils.R')
+source('data_model/training_lib.R')
 lib('stringr')
 lib('ggplot2')
 lib('reshape2')
 
 GetCVPerfSummary <- function(cv.res){
   cv.res$fold.summary %>% group_by(model, fold) %>%
-    summarise_each(funs(head(., 1)), one_of(c('auc', 'acc.max', 'acc.cut'))) %>%
+    summarise_each(funs(head(., 1)), one_of(RESULT_METRICS)) %>%
     ungroup %>% group_by(model) %>% 
-    summarise_each(funs(mean, sd), one_of(c('auc', 'acc.max', 'acc.cut'))) %>%
+    summarise_each(funs(mean, sd), one_of(RESULT_METRICS)) %>%
     ungroup
 }
 
@@ -25,7 +26,7 @@ PlotPerFoldROC <- function(cv.res){
     select(model, fold, x, y, t) %>%
     inner_join(GetCVPerfSummary(cv.res), by='model') %>% ungroup %>%
     filter(str_detect(model, '.')) %>% mutate(
-      model.label=sprintf('%s (auc=%s, acc=%s%%)', model, round(auc_mean, 2), round(acc.max_mean*100, 0)),
+      model.label=sprintf('%s (auc=%s, acc=%s%%)', model, round(auc_mean, 2), round(acc_mean*100, 0)),
       fold=factor(fold)
     ) %>% ggplot(aes(x=x, y=y, color=fold)) + 
     geom_abline(alpha=.5) + geom_line() + theme_bw() + 
@@ -46,7 +47,7 @@ PlotAllFoldROC <- function(cv.res){
 }
 
 PlotHoldOutMetric <- function(ho.res, metric){
-  ho.res %>% group_by(model) %>% do({head(., 1)}) %>%
+  ho.res$model.summary %>% group_by(model) %>% do({head(., 1)}) %>%
     select(one_of(metric), model) %>% melt(id.vars = 'model') %>%
     arrange(value) %>% mutate(model=factor(model, levels=model)) %>%
     ggplot(aes(x=model, y=value, color=model)) + ylab(metric) + 
@@ -55,9 +56,9 @@ PlotHoldOutMetric <- function(ho.res, metric){
 }
 
 PlotHoldOutROC <- function(ho.res){
-  ho.res %>%
+  ho.res$model.summary %>%
     select(model, x, y, t) %>%
-    inner_join(ho.res %>% group_by(model) %>% summarise(auc=auc[1]), by='model') %>% 
+    inner_join(ho.res$model.summary %>% group_by(model) %>% summarise(auc=auc[1]), by='model') %>% 
     mutate(model.label=paste0(model, ' (', round(auc, 3), ')')) %>% 
     ggplot(aes(x=x, y=y, color=factor(model.label))) + 
     geom_line() + geom_abline(alpha=.5) + theme_bw() + 
