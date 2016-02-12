@@ -20,10 +20,14 @@ lib('caretEnsemble')
 lib('ROCR')
 lib('plotly')
 SEED <- 1024
-RESPONSE_TYPE <- 'cosmic' # This will include ctd2 as well at some point
-RESPONSE_SELECTOR <- function(d){ 
-  d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)
-}
+
+#RESPONSE_TYPE <- 'cosmic' 
+#RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
+RESPONSE_TYPE <- 'ctd' 
+RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
+
+
+
 # d <- GetPreparedData(TRAIN_CACHE)
 
 RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)

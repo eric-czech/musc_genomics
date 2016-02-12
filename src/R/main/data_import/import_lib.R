@@ -70,6 +70,7 @@ GetGeneticProfileData <- function(gene.symbols, genetic.profile, chunk.size=50){
     
     # Fetch CCLE data for the given #genetic.profile, for each chunk
     #temp.chunks <- gene.partitions[1:Inf] # TODO: Remove this limit later
+    # Note: The following data comes from the cancer study named 'cellline_ccle_broad'
     data <- foreach(genes=gene.partitions)%do%{
       getProfileData(cgds, genes, genetic.profile, "cellline_ccle_broad_all") %>%
         add_rownames(var='tumor_id') %>% mutate_each(funs(to.char)) 

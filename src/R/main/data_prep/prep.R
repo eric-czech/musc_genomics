@@ -34,6 +34,7 @@ RemoveNA <- function(d, row.threshold=.1){
   })
   rm.tumor <- cts %>% filter(pct_na >= row.threshold) %>% .$tumor_id
   rm.warn <- cts %>% filter(pct_na > 0 & pct_na < row.threshold) %>% .$tumor_id
+  
   if (length(rm.warn) > 0)
     warning(sprintf(
       'The following tumors have NA predictor values but not enough to meet given 
