@@ -139,18 +139,38 @@ GetDataSummarizer <- function(){
   }
 }
 
-RESULT_METRICS <- c('auc', 'acc', 'tpr', 'tnr')
+#RESULT_METRICS <- c('auc', 'acc', 'tpr', 'tnr')
 GetResultSummary <- function(d){
   pred <- prediction(d$y.pred.prob, d$y.test, label.ordering=c('neg', 'pos'))
   roc <- performance(pred, 'tpr', 'fpr') 
   auc <- performance(pred, 'auc')
   acc <- sum(d$y.pred.class == d$y.test) / length(d$y.pred.class)
-  tpr <- sum(d$y.pred.class == d$y.test & d$y.test == 'pos') / sum(d$y.test == 'pos')
-  tnr <- sum(d$y.pred.class == d$y.test & d$y.test == 'neg') / sum(d$y.test == 'neg')
-  data.frame(
+  tpr <- sum(d$y.pred.class == d$y.test & d$y.test == 'pos', na.rm=T) / sum(d$y.test == 'pos')
+  tnr <- sum(d$y.pred.class == d$y.test & d$y.test == 'neg', na.rm=T) / sum(d$y.test == 'neg')
+  
+  margin.stats <- foreach(margin=seq(0, .4, by=.05), .combine=cbind) %do%{
+    y.pred.adj <- d$y.pred.prob %>% sapply(function(p){
+      if (p < .5 - margin) 'neg' else if (p > .5 + margin) 'pos' else NA
+    }) %>% factor(levels=c('neg', 'pos'))
+    n.not.na <- sum(!is.na(y.pred.adj))
+    acc.adj <- ifelse(n.not.na > 0, sum(y.pred.adj == d$y.test & !is.na(y.pred.adj)) / n.not.na, 0)
+    n.pct <- n.not.na / length(y.pred.adj)
+    n.pos.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'pos'); 
+    n.neg.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'neg'); 
+    tpr.adj <- ifelse(n.pos.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'pos', na.rm=T) / n.pos.adj, 0)
+    tnr.adj <- ifelse(n.neg.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'neg', na.rm=T) / n.neg.adj, 0)
+    res <- data.frame(acc=acc.adj, tpr=tpr.adj, tnr=tnr.adj, n.pct=n.pct)
+    res %>% setNames(paste(names(res), margin, sep='_margin_'))
+  }
+
+  res <- data.frame(
     x=roc@x.values[[1]], y=roc@y.values[[1]], 
     t=roc@alpha.values[[1]], auc=auc@y.values[[1]],
     acc=acc, tpr=tpr, tnr=tnr
   )
+  res <- cbind(res, margin.stats)
+  if (any(is.na(res[,'acc_margin_0.3'])))
+    browser()
+  res
 }
 

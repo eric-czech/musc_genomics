@@ -6,10 +6,35 @@ lib('reshape2')
 
 GetCVPerfSummary <- function(cv.res){
   cv.res$fold.summary %>% group_by(model, fold) %>%
-    summarise_each(funs(head(., 1)), one_of(RESULT_METRICS)) %>%
+    summarise_each(funs(head(., 1)), -model) %>%
     ungroup %>% group_by(model) %>% 
-    summarise_each(funs(mean, sd), one_of(RESULT_METRICS)) %>%
+    summarise_each(funs(mean, sd, lo=quantile(., .25), hi=quantile(., .75)), -model) %>%
     ungroup
+}
+
+PlotFoldMetricByMargin <- function(cv.res, metric){
+  d <- GetCVPerfSummary(cv.res) 
+  metrics <- d %>% select(matches(sprintf('%s_margin_.*_mean$', metric))) %>% names %>% str_replace('_mean$', '')
+  d <- d %>% select(model, 
+                    one_of(paste0(metrics, '_mean')), 
+                    one_of(paste0(metrics, '_lo')),
+                    one_of(paste0(metrics, '_hi'))) %>% data.frame
+  d <- foreach(m=metrics, .combine=cbind)%do%{
+    r <- data.frame(
+      lo=d[,paste0(m, '_lo')],
+      hi=d[,paste0(m, '_hi')],
+      mid=d[,paste0(m, '_mean')]
+    )
+    setNames(r, paste(m, c('lo', 'hi', 'mid'), sep='_'))
+  } %>% cbind(data.frame(model=d$model))
+  
+  d %>% melt(id.vars='model') %>% #.$variable %>% as.character %>% str_split('_')
+    mutate(variable=as.character(variable)) %>%
+    mutate(margin=sapply(str_split(variable, '_'), function(x) as.numeric(x[3]))) %>%
+    mutate(range=sapply(str_split(variable, '_'), function(x) x[4])) %>%
+    select(-variable) %>% dcast(model + margin ~ range) %>%
+    ggplot(aes(x=factor(margin), y=mid, ymax=hi, ymin=lo)) + 
+    geom_pointrange() + facet_wrap(~model) + theme_bw()
 }
 
 PlotFoldMetric <- function(cv.res, metric){
