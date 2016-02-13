@@ -21,10 +21,10 @@ lib('ROCR')
 lib('plotly')
 SEED <- 1024
 
-#RESPONSE_TYPE <- 'cosmic' 
-#RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
-RESPONSE_TYPE <- 'ctd' 
-RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
+RESPONSE_TYPE <- 'cosmic' 
+RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
+# RESPONSE_TYPE <- 'ctd' 
+# RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
 
 RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
 select <- dplyr::select
@@ -66,16 +66,16 @@ bin.models <- list()
 # ShowBestTune(bin.models$gbm)
 
 # Complete (takes about 2 hr 30 minutes to run all of the following)
-bin.models$svm.radial.sml <- trainer.i1$train(bin.model.svm.radial.sml, enable.cache=F)
-bin.models$pam <- trainer.i1$train(bin.model.pam, enable.cache=F)
-bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=F)
-#bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=F)
-bin.models$pls <- trainer.i1$train(bin.model.pls, enable.cache=F)
-bin.models$rf <- trainer.i1$train(bin.model.rf, enable.cache=F)
-bin.models$lasso <- trainer.i1$train(bin.model.lasso, enable.cache=F)
-bin.models$ridge <- trainer.i1$train(bin.model.ridge, enable.cache=F)
-bin.models$enet <- trainer.i1$train(bin.model.enet, enable.cache=F)
-
+ec <- T
+bin.models$svm.radial.sml <- trainer.i1$train(bin.model.svm.radial.sml, enable.cache=ec)
+bin.models$pam <- trainer.i1$train(bin.model.pam, enable.cache=ec)
+bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=ec)
+#bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=ec)
+bin.models$pls <- trainer.i1$train(bin.model.pls, enable.cache=ec)
+bin.models$rf <- trainer.i1$train(bin.model.rf, enable.cache=ec)
+bin.models$lasso <- trainer.i1$train(bin.model.lasso, enable.cache=ec)
+bin.models$ridge <- trainer.i1$train(bin.model.ridge, enable.cache=ec)
+bin.models$enet <- trainer.i1$train(bin.model.enet, enable.cache=ec)
 
 # Under Construction
 bin.models$gbm <- trainer.i1$train(bin.model.gbm, enable.cache=F)
@@ -138,16 +138,21 @@ PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
 # AUC ranges by model
 PlotFoldMetric(cv.res, 'auc')
 PlotFoldMetric(cv.res, 'acc')
+PlotFoldMetric(cv.res, 'acc_margin_0.1')
+PlotFoldMetricByMargin(cv.res, 'acc')
 
 
 ## Holdout results
 
 # Calibration checks
-# do.call('rbind', ho.preds) %>% group_by(model) %>% do({
-#   d <- .
-#   d %>% mutate(bin=cut(y.pred, breaks=seq(0, 1, by=.1), include.lowest=T)) %>%
-#     group_by(bin) %>% summarise(pct.pos=sum(y.test == 'pos')/n(), pct.neg=sum(y.test == 'neg')/n(), n=n())
-# }) %>% ggplot(aes(x=as.integer(bin), y=pct.pos, color=model)) + geom_line()
+cal.data <- cv.res$predictions
+#cal.data <- ho.res$predictions
+cal.data %>% group_by(model) %>% do({
+  d <- .
+  p <- seq(0, 1, by=.1)
+  d %>% mutate(bin=cut(y.pred.prob, breaks=p, include.lowest=T)) %>%
+    group_by(bin) %>% summarise(pct.pos=sum(y.test == 'pos')/n(), pct.neg=sum(y.test == 'neg')/n(), n=n())
+}) %>% ggplot(aes(x=bin, y=pct.pos)) + geom_bar(stat='identity') + facet_wrap(~model)
 
 ho.res <- SummarizeTrainingResults(list(ho.preds), T, fold.summary=NULL, model.summary=GetResultSummary)
 RESULT_CACHE$store('ho_model_perf', ho.res)
