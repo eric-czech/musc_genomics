@@ -192,7 +192,13 @@ bin.model.pam <- list(
     train(
       d$X.train.sml, d$y.train.bin, 
       method='pam', preProcess='zv', metric=bin.tgt.metric, 
-      tuneGrid=data.frame(.threshold=c(0, 10^seq(-8, 1, length.out=10))),
+      
+      # See https://github.com/topepo/caret/blob/master/models/files/pam.R for details on how 
+      # grid is chosen by running pamr.train which returns a vector of threshold values determined
+      # by the package.  By default, the package returns 30 values and caret rescales those values
+      # to have the same range but of length 'tuneLength'.  Using 30 for tuneLength maintains 
+      # consistency with choice by package, but removes first and last values (not sure why)
+      tuneLength=30, 
       trControl = bin.trctrl(idx, classProbs=T)
     )
   } 

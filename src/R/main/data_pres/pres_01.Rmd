@@ -16,7 +16,8 @@ opts_chunk$set(root.dir = '~/repos/musc_genomics/src/R/main/data_pres/test')
 setwd('~/repos/musc_genomics/src/R/main')
 source('data_model/training_viz.R')
 lib('plotly')
-RESPONSE_TYPE <- 'cosmic'
+#RESPONSE_TYPE <- 'cosmic'
+RESPONSE_TYPE <- 'ctd'
 cache <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
 
 cv.res <- cache$get('cv_model_perf')
@@ -32,8 +33,8 @@ p.res.dist <- PlotResponseDist(RESPONSE_TYPE, d.res)
 p.cv.auc <- PlotFoldMetric(cv.res, 'auc') + ylim(.4, .9)
 p.ho.auc <- PlotHoldOutMetric(ho.res, 'auc') + ylim(.4, .9)
 
-p.cv.acc <- PlotFoldMetric(cv.res, 'acc.max') + ylim(.6, .8)
-p.ho.acc <- PlotHoldOutMetric(ho.res, 'acc.max') + ylim(.6, .8)
+p.cv.acc <- PlotFoldMetric(cv.res, 'acc') + ylim(.6, .8)
+p.ho.acc <- PlotHoldOutMetric(ho.res, 'acc') + ylim(.6, .8)
 
 ```
 

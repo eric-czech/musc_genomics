@@ -70,7 +70,7 @@ PlotHoldOutROC <- function(ho.res){
 PlotResponseDist <- function(response.type, response.data){
   data.frame(r=response.data) %>% ggplot(aes(x=r)) + 
     geom_histogram(binwidth=.15, alpha=.3) + 
-    geom_density(aes(y=0.15*..count..)) + theme_bw() + 
+    geom_density(aes(y=.15 * ..count..)) + theme_bw() + 
     ggtitle(sprintf('%s Response Distribution', response.type))
 }
 

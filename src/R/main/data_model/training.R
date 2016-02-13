@@ -26,10 +26,6 @@ SEED <- 1024
 RESPONSE_TYPE <- 'ctd' 
 RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
 
-
-
-# d <- GetPreparedData(TRAIN_CACHE)
-
 RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
 select <- dplyr::select
 
@@ -43,6 +39,10 @@ preproc <- c('zv', 'center', 'scale')
 # set.seed(SEED)
 #d.samp <- d.prep.tr %>% sample_frac(.2)
 #X <- d.samp[,sample(c(c.ge, c.cn, c.mu), replace=F, size = 100)]; y <- d.samp[,'response']
+
+## Response Analysis (determining classification cutoffs)
+PlotResponseDist(RESPONSE_TYPE, d.prep[,'response'])
+RESULT_CACHE$store('response_data', d.prep[,'response'])
 
 X <- d.prep.tr %>% select(-response, -tumor_id); 
 y <- d.prep.tr[,'response']; y.bin <- DichotomizeOutcome(y)
@@ -65,16 +65,17 @@ bin.models <- list()
 
 # ShowBestTune(bin.models$gbm)
 
-# Complete
+# Complete (takes about 2 hr 30 minutes to run all of the following)
 bin.models$svm.radial.sml <- trainer.i1$train(bin.model.svm.radial.sml, enable.cache=F)
-bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=F)
-bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=F)
 bin.models$pam <- trainer.i1$train(bin.model.pam, enable.cache=F)
+bin.models$knn <- trainer.i1$train(bin.model.knn, enable.cache=F)
+#bin.models$knn.pca <- trainer.i1$train(bin.model.knn.pca, enable.cache=F)
 bin.models$pls <- trainer.i1$train(bin.model.pls, enable.cache=F)
 bin.models$rf <- trainer.i1$train(bin.model.rf, enable.cache=F)
 bin.models$lasso <- trainer.i1$train(bin.model.lasso, enable.cache=F)
 bin.models$ridge <- trainer.i1$train(bin.model.ridge, enable.cache=F)
 bin.models$enet <- trainer.i1$train(bin.model.enet, enable.cache=F)
+
 
 # Under Construction
 bin.models$gbm <- trainer.i1$train(bin.model.gbm, enable.cache=F)
@@ -123,10 +124,6 @@ ho.preds <- ho.fit
 
 ##### Classification Results ##### 
 
-## Response Analysis (determining classification cutoffs)
-PlotResponseDist(RESPONSE_TYPE, d.prep[,'response'])
-RESULT_CACHE$store('response_data', d.prep[,'response'])
-
 ## CV Results
 
 cv.res <- SummarizeTrainingResults(bin.models, T, fold.summary=GetResultSummary, model.summary=GetResultSummary)
@@ -153,10 +150,6 @@ PlotFoldMetric(cv.res, 'acc')
 # }) %>% ggplot(aes(x=as.integer(bin), y=pct.pos, color=model)) + geom_line()
 
 ho.res <- SummarizeTrainingResults(list(ho.preds), T, fold.summary=NULL, model.summary=GetResultSummary)
-
-ho.res <- foreach(preds=ho.preds, .combine=rbind) %do% {
-  GetResultSummary(preds) %>% mutate(model=preds$model[1])
-}
 RESULT_CACHE$store('ho_model_perf', ho.res)
 
 PlotHoldOutMetric(ho.res, 'auc') 
