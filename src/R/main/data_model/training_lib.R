@@ -10,6 +10,7 @@ lib('caret')
 lib('gam')
 lib('glmnet')
 lib('kernlab')
+lib('ROCR')
 
 
 
@@ -67,19 +68,27 @@ GetTrainingData <- function(cache, response.type, response.selector, min.mutatio
   cache$load(sprintf('data_prep_02_%s', response.type), loader)
 }
 
-DichotomizeOutcome <- function(y) {
+DichotomizeOutcome <- function(y, threshold) {
   if (is.null(y)) return(NULL)
-  factor((sign(y) + 1) * .5, levels=c(0, 1), labels=c('neg', 'pos'))
+  if (any(is.na(y))) stop('Outcome cannot contain NA values')
+  
+  # If outcome value is below or equal to 'threshold', then the drug 
+  # sensitivity is high and the outcome is labeled as "pos" ("neg" otherwise)
+  #factor(ifelse(y <= threshold, 'pos', 'neg'), levels=c('neg', 'pos'))
+  factor(ifelse(y <= threshold, 'pos', 'neg'), levels=c('pos', 'neg'))
 }
 
-GetFoldDataGenerator <- function(preproc, linear.only, n.core=8, 
-                                 sml.num.p=.0001, lrg.num.p=.15, sml.bin.p=.15, lrg.bin.p=.15){    
+GetFoldDataGenerator <- function(preproc, y.tresh, linear.only, n.core=8, 
+                                 sml.num.p=.0001, lrg.num.p=.15, 
+                                 sml.bin.p=.15, lrg.bin.p=.15, pca.thresh=.95){    
   function(X.train.all, y.train, X.test, y.test){
     # Apply feature selector
     loginfo('Running feature selection')
     registerDoMC(n.core)
 
-    c.numeric <- c(GetFeatures(X.train.all, 'cn'), GetFeatures(X.train.all, 'ge'))
+    c.cn <- GetFeatures(X.train.all, 'cn')
+    c.ge <- GetFeatures(X.train.all, 'ge')
+    c.numeric <- c(c.cn, c.ge)
     c.binary <- GetFeatures(X.train.all, 'mu')
     
     # Note that feature selection is done using only numeric (not binary) responses
@@ -88,39 +97,51 @@ GetFoldDataGenerator <- function(preproc, linear.only, n.core=8,
     X.train.lrg <- ApplyFeatureFilter(X.train.all, y.train, c.numeric, c.binary, 'numeric', linear.only,
                                       numeric.score.p=lrg.num.p, binary.score.p=lrg.bin.p)
     
-    # Removing zero-variance features
-    # X.train.sml <- ApplyZeroVarianceFilter(X.train.sml)
-    # X.train.all <- ApplyZeroVarianceFilter(X.train.all)
-    
     # Apply preprocessing to feature subset
     loginfo('Running preprocessing')
+    
+    ## PCA preprocessing
+#     pp.pca.ge <- preProcess(X.train.all[,c.ge], method=c(preproc, 'pca'), thresh=pca.thresh)
+#     pp.pca.cn <- preProcess(X.train.all[,c.cn], method=c(preproc, 'pca'), thresh=pca.thresh)
+#     pred.pca <- function(d, c.sml){ cbind(
+#       predict(pp.pca.ge, d[,c.ge]) %>% setNames(paste0('ge.', names(.))),
+#       predict(pp.pca.cn, d[,c.cn]) %>% setNames(paste0('cn.', names(.))),
+#       d[, c.sml[c.sml %in% c.binary]]
+#     )}
+    
+    ## Standard preprocessing
     pp.lrg <- preProcess(X.train.lrg, method=preproc)
     pp.sml <- preProcess(X.train.sml, method=preproc)
     X.train.lrg <- predict(pp.lrg, X.train.lrg)
     X.train.sml <- predict(pp.sml, X.train.sml)
+    #X.train.pca <- pred.pca(X.train.all, names(X.train.sml))
     
     # X.test may be null if this data preprocessing call is not for resampling iteration
     if (is.null(X.test)){
       X.test.lrg <- NULL
       X.test.sml <- NULL
+      #X.test.pca <- NULL
     } else {
       X.test.lrg  <- predict(pp.lrg, X.test[,names(X.train.lrg)])
       X.test.sml  <- predict(pp.sml, X.test[,names(X.train.sml)])
+      #X.test.pca <- pred.pca(X.test, names(X.train.sml))
     }
     
     list(
-      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml), X.names=names(X.train.all),
-      X.train.sml=X.train.sml, X.train.lrg=X.train.lrg,
-      X.test.sml=X.test.sml, X.test.lrg=X.test.lrg,
+      #preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml, pp.pca.ge=pp.pca.ge, pp.pca.cn=pp.pca.cn), 
+      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml),#, pp.pca.ge=pp.pca.ge, pp.pca.cn=pp.pca.cn), 
+      X.names=names(X.train.all),
+      X.train.sml=X.train.sml, X.train.lrg=X.train.lrg, #X.train.pca=X.train.pca,
+      X.test.sml=X.test.sml, X.test.lrg=X.test.lrg, #X.test.pca=X.test.pca,
       y.train=y.train, y.test=y.test,
-      y.train.bin=DichotomizeOutcome(y.train), y.test.bin=DichotomizeOutcome(y.test)
+      y.train.bin=DichotomizeOutcome(y.train, y.tresh), y.test.bin=DichotomizeOutcome(y.test, y.tresh)
     )
   }
 }
 
 CreateFoldIndex <- function(y, index, level){
   if (level == 1) # Outer folds should be returned for training set, not test set
-    createFolds(y, k = 10, returnTrain = T)
+    createMultiFolds(y, k = 10, times = 3)
   else if (level == 2) # Inner folds should be partioned the same as above
     createFolds(y[index], k=10, returnTrain = T)
   else
@@ -132,45 +153,63 @@ GetDataSummarizer <- function(){
     gfl <- function(f, t) length(f[str_detect(f, sprintf('^%s.', t))])
     n.sml <- names(d$X.train.sml)
     n.lrg <- names(d$X.train.lrg)
+    n.pca <- names(d$X.train.pca)
     logdebug('Dimension reduction summary after preprocessing:')
-    logdebug('Mutation features    : %s --> %s / %s', gfl(d$X.names, 'mu'), gfl(n.lrg, 'mu'), gfl(n.sml, 'mu'))
-    logdebug('Expression features  : %s --> %s / %s', gfl(d$X.names, 'ge'), gfl(n.lrg, 'ge'), gfl(n.sml, 'ge'))
-    logdebug('Copy Number features : %s --> %s / %s', gfl(d$X.names, 'cn'), gfl(n.lrg, 'cn'), gfl(n.sml, 'cn'))
+    logdebug('Mutation features    : %s --> %s / %s / %s', 
+             gfl(d$X.names, 'mu'), gfl(n.lrg, 'mu'), gfl(n.sml, 'mu'), gfl(n.pca, 'mu'))
+    logdebug('Expression features  : %s --> %s / %s / %s', 
+             gfl(d$X.names, 'ge'), gfl(n.lrg, 'ge'), gfl(n.sml, 'ge'), gfl(n.pca, 'ge'))
+    logdebug('Copy Number features : %s --> %s / %s / %s', 
+             gfl(d$X.names, 'cn'), gfl(n.lrg, 'cn'), gfl(n.sml, 'cn'), gfl(n.pca, 'cn'))
   }
 }
 
 #RESULT_METRICS <- c('auc', 'acc', 'tpr', 'tnr')
-GetResultSummary <- function(d){
-  pred <- prediction(d$y.pred.prob, d$y.test, label.ordering=c('neg', 'pos'))
-  roc <- performance(pred, 'tpr', 'fpr') 
-  auc <- performance(pred, 'auc')
-  acc <- sum(d$y.pred.class == d$y.test) / length(d$y.pred.class)
-  tpr <- sum(d$y.pred.class == d$y.test & d$y.test == 'pos', na.rm=T) / sum(d$y.test == 'pos')
-  tnr <- sum(d$y.pred.class == d$y.test & d$y.test == 'neg', na.rm=T) / sum(d$y.test == 'neg')
+ResSummaryFun <- function(curve.type='roc') function(d) GetResultSummary(d, curve.type=curve.type)
+GetResultSummary <- function(d, curve.type='lift'){
   
-  margin.stats <- foreach(margin=seq(0, .4, by=.05), .combine=cbind) %do%{
-    y.pred.adj <- d$y.pred.prob %>% sapply(function(p){
-      if (p < .5 - margin) 'neg' else if (p > .5 + margin) 'pos' else NA
-    }) %>% factor(levels=c('neg', 'pos'))
-    n.not.na <- sum(!is.na(y.pred.adj))
-    acc.adj <- ifelse(n.not.na > 0, sum(y.pred.adj == d$y.test & !is.na(y.pred.adj)) / n.not.na, 0)
-    n.pct <- n.not.na / length(y.pred.adj)
-    n.pos.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'pos'); 
-    n.neg.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'neg'); 
-    tpr.adj <- ifelse(n.pos.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'pos', na.rm=T) / n.pos.adj, 0)
-    tnr.adj <- ifelse(n.neg.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'neg', na.rm=T) / n.neg.adj, 0)
-    res <- data.frame(acc=acc.adj, tpr=tpr.adj, tnr=tnr.adj, n.pct=n.pct)
-    res %>% setNames(paste(names(res), margin, sep='_margin_'))
-  }
+  # Create performance measures
+  pred <- prediction(d$y.pred.prob, d$y.test)
+  cmat <- confusionMatrix(d$y.pred.class, d$y.test, positive='pos')
+  
+  # Extract desired measures
+  auc <- performance(pred, 'auc')
+  kappa <- as.numeric(cmat$overall['Kappa'])
+  mcp <- coalesce(as.numeric(cmat$overall['McnemarPValue']), 1)
+  acc <- as.numeric(cmat$overall['Accuracy'])
+  bacc <- as.numeric(cmat$byClass['Balanced Accuracy'])
+  sens <- as.numeric(cmat$byClass['Sensitivity'])
+  spec <- as.numeric(cmat$byClass['Specificity'])
+  
+  if (tolower(curve.type) == 'roc') curve <- performance(pred, 'tpr', 'fpr') 
+  else if (tolower(curve.type) == 'pr') curve <- performance(pred, 'prec', 'rec')
+  else if (tolower(curve.type) == 'lift') curve <- performance(pred, 'lift', 'rpp')
+  else if (tolower(curve.type) == 'gain') curve <- performance(pred, 'tpr', 'rpp')
+  else stop(sprintf('Invalid curve type %s', curve.type))
+  
+#   margin.stats <- foreach(margin=seq(0, .4, by=.05), .combine=cbind) %do%{
+#     y.pred.adj <- d$y.pred.prob %>% sapply(function(p){
+#       if (p < .5 - margin) 'neg' else if (p > .5 + margin) 'pos' else NA
+#     }) %>% factor(levels=c('neg', 'pos'))
+#     n.not.na <- sum(!is.na(y.pred.adj))
+#     acc.adj <- ifelse(n.not.na > 0, sum(y.pred.adj == d$y.test & !is.na(y.pred.adj)) / n.not.na, 0)
+#     n.pct <- n.not.na / length(y.pred.adj)
+#     n.pos.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'pos'); 
+#     n.neg.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'neg'); 
+#     tpr.adj <- ifelse(n.pos.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'pos', na.rm=T) / n.pos.adj, 0)
+#     tnr.adj <- ifelse(n.neg.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'neg', na.rm=T) / n.neg.adj, 0)
+#     res <- data.frame(acc=acc.adj, tpr=tpr.adj, tnr=tnr.adj, n.pct=n.pct)
+#     res %>% setNames(paste(names(res), margin, sep='_margin_'))
+#   }
 
   res <- data.frame(
-    x=roc@x.values[[1]], y=roc@y.values[[1]], 
-    t=roc@alpha.values[[1]], auc=auc@y.values[[1]],
-    acc=acc, tpr=tpr, tnr=tnr
+    x=curve@x.values[[1]], y=curve@y.values[[1]], 
+    t=curve@alpha.values[[1]], auc=auc@y.values[[1]],
+    acc=acc, bacc=bacc, spec=spec, sens=sens, kappa=kappa, mcp=mcp
   )
-  res <- cbind(res, margin.stats)
-  if (any(is.na(res[,'acc_margin_0.3'])))
-    browser()
+#   res <- cbind(res, margin.stats)
+#   if (any(is.na(res[,'acc_margin_0.3'])))
+#     browser()
   res
 }
 

@@ -4,11 +4,14 @@ lib('stringr')
 lib('ggplot2')
 lib('reshape2')
 
-GetCVPerfSummary <- function(cv.res){
+GetCVScalarStats <- function(cv.res){
   cv.res$fold.summary %>% group_by(model, fold) %>%
-    summarise_each(funs(head(., 1)), -model) %>%
-    ungroup %>% group_by(model) %>% 
-    summarise_each(funs(mean, sd, lo=quantile(., .25), hi=quantile(., .75)), -model) %>%
+    summarise_each(funs(head(., 1)), -model) %>% ungroup
+}
+
+GetCVPerfSummary <- function(cv.res){
+  GetCVScalarStats(cv.res) %>% group_by(model) %>% 
+    summarise_each(funs(mean, sd, lo=quantile(., .25), hi=quantile(., .75)), -model, -x, -y, -t) %>%
     ungroup
 }
 
@@ -34,15 +37,27 @@ PlotFoldMetricByMargin <- function(cv.res, metric){
     mutate(range=sapply(str_split(variable, '_'), function(x) x[4])) %>%
     select(-variable) %>% dcast(model + margin ~ range) %>%
     ggplot(aes(x=factor(margin), y=mid, ymax=hi, ymin=lo)) + 
-    geom_pointrange() + facet_wrap(~model) + theme_bw()
+    geom_pointrange() + facet_wrap(~model) + theme_bw() + 
+    xlab('Margin Size (on probability scale)') + 
+    ylab('Accuracy Range (IQR)')
 }
 
+# PlotFoldMetric <- function(cv.res, metric){
+#   GetCVPerfSummary(cv.res) %>% 
+#     rename_(v_mean=paste0(metric, '_mean'), v_sd=paste0(metric, '_sd')) %>%
+#     arrange(v_mean) %>% mutate(model=factor(model, levels=model)) %>%
+#     ggplot(aes(x=model, y=v_mean, ymin=v_mean - v_sd, ymax=v_mean + v_sd, color=model)) +
+#     geom_pointrange() + coord_flip() + theme_bw() + ylab(metric) + 
+#     ggtitle(sprintf('CV %s Estimates', metric))
+# }
+
 PlotFoldMetric <- function(cv.res, metric){
-  GetCVPerfSummary(cv.res) %>% 
-    rename_(v_mean=paste0(metric, '_mean'), v_sd=paste0(metric, '_sd')) %>%
-    arrange(v_mean) %>% mutate(model=factor(model, levels=model)) %>%
-    ggplot(aes(x=model, y=v_mean, ymin=v_mean - v_sd, ymax=v_mean + v_sd, color=model)) +
-    geom_pointrange() + coord_flip() + theme_bw() + ylab(metric) + 
+  GetCVScalarStats(cv.res) %>% 
+    rename_(value=metric) %>%
+    mutate(model=factor(model)) %>%
+    mutate(model=reorder(model, value)) %>%
+    ggplot(aes(x=model, y=value, color=model)) +
+    geom_boxplot() + coord_flip() + theme_bw() + ylab(metric) + 
     ggtitle(sprintf('CV %s Estimates', metric))
 }
 
@@ -59,16 +74,39 @@ PlotPerFoldROC <- function(cv.res){
     ggtitle('CV ROC')
 }
 
+PlotPerFoldPR <- function(cv.res){
+  cv.res$fold.summary %>% 
+    select(model, fold, x, y, t) %>%
+    inner_join(GetCVPerfSummary(cv.res), by='model') %>% ungroup %>%
+    filter(str_detect(model, '.')) %>% mutate(
+      model.label=sprintf('%s (sens=%s, kappa=%s)', model, round(sens_mean, 2), round(kappa_mean, 2)),
+      fold=factor(fold)
+    ) %>% ggplot(aes(x=x, y=y, color=fold)) + 
+    geom_line() + theme_bw() + 
+    facet_wrap(~model.label) + xlab('Recall') + ylab('Precision') +
+    ggtitle('CV PR')
+}
+
 PlotAllFoldROC <- function(cv.res){
   cv.res$model.summary %>%
     select(model, x, y, t) %>%
     inner_join(GetCVPerfSummary(cv.res), by='model') %>%
-    filter(str_detect(model, '.')) %>% 
     mutate(model.label=paste0(model, ' (', round(auc_mean, 3), ')')) %>% 
     ggplot(aes(x=x, y=y, color=factor(model.label))) + 
     geom_abline(alpha=.5) + geom_line() + theme_bw() +
     xlab('False Positive Rate') + ylab('True Positive Rate') +
     ggtitle('CV ROC (combined)')
+}
+
+PlotAllFoldPR <- function(cv.res){
+  cv.res$model.summary %>%
+    select(model, x, y, t) %>%
+    inner_join(GetCVPerfSummary(cv.res), by='model') %>%
+    mutate(model.label=sprintf('%s (sens=%s, kappa=%s)', model, round(sens_mean, 2), round(kappa_mean, 2))) %>%
+    ggplot(aes(x=x, y=y, color=factor(model.label))) + 
+    geom_line() + theme_bw() +
+    facet_wrap(~model.label) + xlab('Recall') + ylab('Precision') +
+    ggtitle('CV PR (combined)')
 }
 
 PlotHoldOutMetric <- function(ho.res, metric){
@@ -80,6 +118,28 @@ PlotHoldOutMetric <- function(ho.res, metric){
     ggtitle(sprintf('Holdout %s', metric))
 }
 
+PlotHoldOutPR <- function(ho.res){
+  ho.res$model.summary %>%
+    select(model, x, y, t) %>%
+    inner_join(ho.res$model.summary %>% group_by(model) %>% summarise(sens=sens[1], kappa=kappa[1]), by='model') %>% 
+    mutate(model.label=sprintf('%s (sens=%s, kappa=%s)', model, round(sens, 2), round(kappa, 2))) %>%
+    ggplot(aes(x=x, y=y, color=factor(model.label))) + 
+    geom_line() + theme_bw() + 
+    facet_wrap(~model.label) + xlab('Recall') + ylab('Precision') +
+    ggtitle('Holdout PR')
+}
+
+PlotHoldOutLift <- function(ho.res){
+  ho.res$model.summary %>%
+    select(model, x, y, t) %>%
+    inner_join(ho.res$model.summary %>% group_by(model) %>% summarise(sens=sens[1], kappa=kappa[1]), by='model') %>% 
+    mutate(model.label=sprintf('%s (sens=%s, kappa=%s)', model, round(sens, 2), round(kappa, 2))) %>%
+    ggplot(aes(x=x, y=y, color=factor(model.label))) + 
+    geom_line() + theme_bw() + 
+    facet_wrap(~model.label) + xlab('% Cases Predicted') + ylab('Lift') +
+    ggtitle('Holdout Lift')
+}
+
 PlotHoldOutROC <- function(ho.res){
   ho.res$model.summary %>%
     select(model, x, y, t) %>%
@@ -89,13 +149,13 @@ PlotHoldOutROC <- function(ho.res){
     geom_line() + geom_abline(alpha=.5) + theme_bw() + 
     xlab('False Positive Rate') + ylab('True Positive Rate') +
     ggtitle('Holdout ROC')
-    
 }
 
-PlotResponseDist <- function(response.type, response.data){
+PlotResponseDist <- function(response.type, response.data, response.cutoff=0){
   data.frame(r=response.data) %>% ggplot(aes(x=r)) + 
     geom_histogram(binwidth=.15, alpha=.3) + 
     geom_density(aes(y=.15 * ..count..)) + theme_bw() + 
-    ggtitle(sprintf('%s Response Distribution', response.type))
+    geom_vline(aes(xintercept=response.cutoff)) + 
+    ggtitle(sprintf('%s Response Distribution', response.type)) 
 }
 

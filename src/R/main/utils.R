@@ -5,7 +5,8 @@ library(devtools)
 source('~/repos/portfolio/functional/common/R/utils.R')
 #source_url('http://cdn.rawgit.com/eric-czech/portfolio/master/functional/common/R/utils.R')
 
-# Load these in this order to avoid warning messages from plyr package
+# Load these packages in this order to avoid namespace conflicts and warning messages from plyr package
+lib('MASS')
 lib('plyr')
 lib('dplyr')
 
