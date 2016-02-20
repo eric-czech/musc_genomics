@@ -22,13 +22,13 @@ lib('ROCR')
 lib('plotly')
 SEED <- 1024
 
-RESPONSE_TYPE <- 'cosmic' 
-RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
-RESPONSE_THRESH <- -1 
+# RESPONSE_TYPE <- 'cosmic' 
+# RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
+# RESPONSE_THRESH <- -1 
 
-# RESPONSE_TYPE <- 'ctd' 
-# RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
-# RESPONSE_THRESH <- -1
+RESPONSE_TYPE <- 'ctd' 
+RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
+RESPONSE_THRESH <- -1
 
 PREPROC <- c('zv', 'center', 'scale')
 
@@ -87,7 +87,7 @@ bin.lrg.models <- list()
 ec <- T
 bin.sml.models$svm.radial.sml <- trainer$train(bin.model.svm.radial.sml, enable.cache=ec)
 bin.sml.models$svm.linear.sml <- trainer$train(bin.model.svm.linear.sml, enable.cache=ec)
-bin.sml.models$pls <- trainer$train(bin.model.pls.sml, enable.cache=F)
+bin.sml.models$pls <- trainer$train(bin.model.pls.sml, enable.cache=ec)
 bin.sml.models$pam <- trainer$train(bin.model.pam.sml, enable.cache=ec)
 bin.sml.models$knn <- trainer$train(bin.model.knn.sml, enable.cache=ec)
 bin.sml.models$rf <- trainer$train(bin.model.rf.sml, enable.cache=ec)
@@ -95,16 +95,16 @@ bin.sml.models$lasso <- trainer$train(bin.model.lasso.sml, enable.cache=ec)
 bin.sml.models$ridge <- trainer$train(bin.model.ridge.sml, enable.cache=ec)
 bin.sml.models$enet <- trainer$train(bin.model.enet.sml, enable.cache=ec)
 bin.sml.models$gbm <- trainer$train(bin.model.gbm.sml, enable.cache=ec)
+bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=ec)
 
+# Under Construction
 
 source('data_model/training_models.R')
-bin.sml.models$rda <- trainer$train(bin.model.rda.sml, enable.cache=F)
-
-bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=F)
-bin.lrg.models$scrda <- trainer$train(bin.model.scrda.lrg, enable.cache=F)
-
+#bin.sml.models$rda <- trainer$train(bin.model.rda.sml, enable.cache=F)
+#bin.lrg.models$scrda <- trainer$train(bin.model.scrda.lrg, enable.cache=F)
 #bin.sml.models$mars <- trainer$train(bin.model.mars.sml, enable.cache=ec)
 
+# PCA models
 ec <- T
 bin.pca.models$svm.radial.pca <- trainer$train(bin.model.svm.radial.pca, enable.cache=ec)
 bin.pca.models$pls <- trainer$train(bin.model.pls.pca, enable.cache=F)
@@ -116,8 +116,6 @@ bin.pca.models$ridge <- trainer$train(bin.model.ridge.pca, enable.cache=ec)
 bin.pca.models$enet <- trainer$train(bin.model.enet.pca, enable.cache=ec)
 bin.pca.models$gbm <- trainer$train(bin.model.gbm.pca, enable.cache=ec)
 
-# Under Construction
-
 bin.models$rda <- trainer$train(bin.model.rda, enable.cache=F)
 bin.sml.models$et <- trainer$train(bin.model.et.sml, enable.cache=ec)
 bin.pca.models$et <- trainer$train(bin.model.et.pca, enable.cache=ec)
@@ -125,6 +123,9 @@ bin.pca.models$et <- trainer$train(bin.model.et.pca, enable.cache=ec)
 # bin.models$nb <- trainer$train(bin.model.nb)
 # bin.models$rf <- trainer$train(bin.model.rf)
 # bin.models$gbm <- trainer$train(bin.model.gbm)
+
+
+##### Alternative Datasets #####
 
 scale <- function(x) (x - mean(x)) / sd(x)
 X.ge <- d.tr$X[,GetFeatures(d.tr$X, 'ge')] %>% mutate_each(funs(scale)) 
@@ -146,22 +147,96 @@ params <- bin.sml.models$scrda[[3]]$fit$bestTune
 var.imp <- varImp(bin.sml.models$scrda[[3]]$fit, alpha=params$alpha, delta=params$delta, scale=F)
 table(var.imp$importance)
 
-##### Classification Ensembles #####
+
+##### CV Results #####
+
+cv.res <- SummarizeTrainingResults(bin.sml.models, T, fold.summary=ResSummaryFun('pr'), model.summary=ResSummaryFun('pr'))
+RESULT_CACHE$store('cv_model_perf', cv.res)
+
+# Plot confusion matrix numbers by model
+PlotFoldConfusion(cv.res)
+
+# ROC curves per-fold
+PlotPerFoldROC(cv.res)
+PlotPerFoldPR(cv.res)
+
+# ROC curves across folds
+PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
+PlotAllFoldPR(cv.res)
+
+# AUC ranges by model
+PlotFoldMetric(cv.res, 'auc')
+PlotFoldMetric(cv.res, 'bacc')
+PlotFoldMetric(cv.res, 'acc')
+PlotFoldMetric(cv.res, 'cacc')
+PlotFoldMetric(cv.res, 'kappa')
+PlotFoldMetric(cv.res, 'sens')
+PlotFoldMetric(cv.res, 'spec')
+PlotFoldMetric(cv.res, 'mcp')
+PlotFoldMetric(cv.res, 'acc_margin_0.1')
+PlotFoldMetricByMargin(cv.res, 'acc')
+
+
+##### Model Correlations #####
+
+str.sort <- function(x) paste(sort(unlist(strsplit(x, ""))), collapse = "")
+model.cors <- foreach(i=1:length(trainer$getFoldIndex()$outer), .combine=rbind)%do%{
+  models <- lapply(names(bin.sml.models), function(m) {
+    if (str_detect(m, '\\.ens')) NULL
+    else list(name=m, fit=bin.sml.models[[m]][[i]]$fit)
+  })
+  models <- models[!sapply(models, is.null)]
+  models <- lapply(models, function(m)m$fit) %>% setNames(sapply(models, function(m)m$name))
+  modelCor(resamples(models)) %>% as.data.frame %>% add_rownames(var='first') %>% 
+    melt(id.vars='first', variable.name='second') %>% 
+    mutate(value=abs(value), pair=sapply(paste(first, second, sep='<->'), str.sort)) %>%
+    group_by(pair) %>% do({head(., 1)}) %>% ungroup %>% mutate(fold=i)
+}
+model.cors %>% group_by(first, second) %>% 
+  summarise(value=mean(value)) %>% ungroup %>%
+  arrange(value) %>% head(35) %>%
+  mutate(pair=paste(first, as.character(second))) %>%
+  mutate(pair=factor(pair, levels=pair)) %>%
+  ggplot(aes(x=pair, y=value)) + geom_bar(stat='identity') + 
+  theme_bw() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+##### Ensemble Selection #####
 
 ens.models <- list(
-  pam=function(i) bin.sml.models$pam[[i]]$fit,
-  #pls=function(i) bin.sml.models$pls[[i]]$fit,
-  gbm=function(i) bin.sml.models$gbm[[i]]$fit,
-  rf=function(i) bin.sml.models$rf[[i]]$fit,
-  knn=function(i) bin.sml.models$knn[[i]]$fit,
-  glmnet=function(i) bin.sml.models$enet[[i]]$fit,
+  scrda=function(i) bin.sml.models$scrda[[i]]$fit,
+  ridge=function(i) bin.sml.models$ridge[[i]]$fit,
   svmRadial=function(i) bin.sml.models$svm.radial.sml[[i]]$fit,
-  svmLinear=function(i) bin.sml.models$svm.linear.sml[[i]]$fit
+  pam=function(i) bin.sml.models$pam[[i]]$fit,
+  pls=function(i) bin.sml.models$pls[[i]]$fit,
+  gbm=function(i) bin.sml.models$gbm[[i]]$fit
 )
-bin.model.ens1 <- GetEnsembleModel(ens.models, 'bin.ens1', bin.test, 
-                                   bin.predict.ens.sml, method='glm',
-                                   metric=bin.tgt.metric, trControl=trainControl(method='cv', savePredictions = 'final'))
+
+get.ensemble <- function(models, name){
+  GetEnsembleModel(models, name, bin.test,  
+                   bin.predict.ens.sml, method='glm',
+                   metric=bin.tgt.metric, trControl=trainControl(method='cv', savePredictions = 'final'))
+}
+
+bin.model.ens1 <- get.ensemble(ens.models, 'bin.ens1')
 bin.sml.models$bin.model.ens1 <- trainer$train(bin.model.ens1, enable.cache=F)
+
+bin.ens.sub1.ge <- bin.model(
+  'scrda.ge', 5, bin.train.sml, bin.predict.sml, 
+  method=GetDataSubsetModel(GetSCRDAModel(10), feature.selector.ge), 
+  preProcess='zv', tuneLength=15
+)
+bin.ens.sub1.cn <- bin.model(
+  'scrda.cn', 5, bin.train.sml, bin.predict.sml, 
+  method=GetDataSubsetModel(GetSCRDAModel(10), feature.selector.cn), 
+  preProcess='zv', tuneLength=15
+)
+bin.ens.sub1.mu <- bin.model(
+  'rf.mu', 5, bin.train.sml, bin.predict.sml, 
+  method=GetDataSubsetModel(getModelInfo('rf', regex=F)[[1]], feature.selector.mu), 
+  preProcess='zv', tuneLength=5
+)
+bin.model.part.ens1 <- GetPartitionedEnsembleModel('bin.ens.sub1', bin.ens.sub1.ge, bin.ens.sub1.cn, bin.ens.sub1.mu, bin.test)
+bin.sml.models$bin.model.part.ens1 <- trainer$train(bin.model.part.ens1, enable.cache=F)
 
 ##### Classification Hold Out #####
 
@@ -188,48 +263,29 @@ ho.pca.fit <- trainer$getCache()$load('holdout_pca_fit', function(){
   trainer$holdout(pca.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, 'holdout_data') 
 })
 
+
 # trainer$getCache()$invalidate('calibration_fit')
-cb.fit <- trainer$getCache()$load('calibration_fit', function(){
-  trainer$holdout(models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, fold.data.gen, 'calibration_data') 
+cb.sml.fit <- trainer$getCache()$load('calibration_fit', function(){
+  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, fold.data.gen, 'calibration_data') 
 })
 
 
-ens.models.ho <- lapply(ho.sml.fit, function(m) {function(i) m$fit}) %>% 
-  setNames(sapply(ho.sml.fit, function(m) m$model))
-bin.model.ens1.ho <- GetEnsembleModel(ens.models.ho, 'bin.ens1.ho', bin.test,  
-                                   bin.predict.ens.sml, method='glm',
-                                   metric=bin.tgt.metric, trControl=trainControl(method='cv', savePredictions = 'final'))
-ens.ho.fit <- trainer$holdout(list(t1=bin.model.ens1.ho), d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, 'holdout_data')
 
+ens.models.ho <- lapply(ho.sml.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(ho.sml.fit, function(m) m$model))
+bin.model.ens1.ho <- get.ensemble(ens.models.ho, 'bin.ens1.ho')
+ens.ho.fit <- trainer$holdout(list(bin.model.ens1.ho), d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, 'holdout_data')
 
+ens.models.cb <- lapply(cb.sml.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(cb.sml.fit, function(m) m$model))
+bin.model.ens1.cb <- get.ensemble(ens.models.cb, 'bin.ens1.cb')
+ens.cb.fit <- trainer$holdout(list(bin.model.ens1.cb), d.tr$X, d.tr$y, d.cb$X, d.cb$y, fold.data.gen, 'calibration_data')
+
+cb.sml.fit.all <- c(ens.cb.fit, cb.sml.fit)
 
 # ho.data <- bs.data.gen(X.ho, y.ho.bin, X.ho, y.ho.bin)
 
 ##### Classification Results ##### 
 
-## CV Results
 
-cv.res <- SummarizeTrainingResults(bin.lrg.models, T, fold.summary=ResSummaryFun('pr'), model.summary=ResSummaryFun('pr'))
-RESULT_CACHE$store('cv_model_perf', cv.res)
-
-# ROC curves per-fold
-PlotPerFoldROC(cv.res)
-PlotPerFoldPR(cv.res)
-
-# ROC curves across folds
-PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
-PlotAllFoldPR(cv.res)
-
-# AUC ranges by model
-PlotFoldMetric(cv.res, 'auc')
-PlotFoldMetric(cv.res, 'bacc')
-PlotFoldMetric(cv.res, 'acc')
-PlotFoldMetric(cv.res, 'kappa')
-PlotFoldMetric(cv.res, 'sens')
-PlotFoldMetric(cv.res, 'spec')
-PlotFoldMetric(cv.res, 'mcp')
-PlotFoldMetric(cv.res, 'acc_margin_0.1')
-PlotFoldMetricByMargin(cv.res, 'acc')
 
 
 ## Holdout results
@@ -249,12 +305,14 @@ ho.res <- SummarizeTrainingResults(list(ho.sml.fit), T, fold.summary=NULL, model
 RESULT_CACHE$store('ho_model_perf', ho.res)
 
 
-cb.res <- SummarizeTrainingResults(list(cb.sml.fit), T, fold.summary=NULL, model.summary=ResSummaryFun('lift'))
+cb.res <- SummarizeTrainingResults(list(cb.sml.fit.all), T, fold.summary=NULL, model.summary=ResSummaryFun('lift'))
 RESULT_CACHE$store('cb_model_perf', cb.res)
 
-p.res <- ho.res
+p.res <- cb.res
+PlotHoldOutConfusion(p.res)
 PlotHoldOutMetric(p.res, 'auc') 
 PlotHoldOutMetric(p.res, 'acc')
+PlotHoldOutMetric(p.res, 'cacc')
 PlotHoldOutMetric(p.res, 'kappa')
 PlotHoldOutMetric(p.res, 'sens')
 PlotHoldOutMetric(p.res, 'spec')
@@ -262,11 +320,19 @@ PlotHoldOutROC(p.res)
 PlotHoldOutPR(p.res)
 PlotHoldOutLift(p.res)
 
-cb.acc <- foreach(fold=cb.fit, .combine=rbind) %do% {
+
+# Calibration via selection
+
+cb.acc <- foreach(fold=cb.sml.fit.all, .combine=rbind) %do% {
   p.max <- .9; p.min <- .1; p.inc <- .1
-  p.range <- range(fold$y.pred$prob)
-  foreach(lo=seq(p.range[1], p.range[2], length=10), .combine=rbind)%do%{
-    foreach(hi=seq(lo, p.range[2], length=10), .combine=rbind)%do%{
+  y.prob <- fold$y.pred$prob
+  
+  mid <- as.numeric(quantile(y.prob, probs=.85))
+  lo.vals <- as.numeric(quantile(y.prob[y.prob < mid], probs = seq(0, 1, len=10), na.rm=T))
+  hi.vals <- as.numeric(quantile(y.prob[y.prob >= mid], probs = seq(0, 1, len=10), na.rm=T))
+
+  foreach(lo=unique(na.omit(lo.vals)), .combine=rbind)%do%{
+    foreach(hi=unique(na.omit(hi.vals)), .combine=rbind)%do%{
       if (lo >= hi) return(NULL)
       y.range <- sapply(fold$y.pred$prob, function(x) if (x <= lo) 'lo' else if (x >= hi) 'hi' else 'na')
       stats <- data.frame(range=y.range, y.pred=fold$y.pred$class, y.test=fold$y.test) %>%
@@ -290,12 +356,14 @@ cb.score <- cb.acc %>% group_by(model, lo, hi) %>% do({
   N <- sum(ct)
   is.valid <- ct['lo'] >= 5 && ct['hi'] >= 5
   
-  #value <- ifelse(is.valid, .8 * as.numeric(acc['hi']) + .2 * as.numeric(acc['lo']), NA)
-  value <- ifelse(is.valid, acc['hi'] * acc['lo'], NA)
+  value <- ifelse(is.valid, .75 * as.numeric(acc['hi']) + .25 * as.numeric(acc['lo']), NA)
+  #value <- ifelse(is.valid, acc['hi'] * acc['lo'], NA)
   
   data.frame(value=value)
 })
-cb.score %>% na.omit %>% ggplot(aes(x=factor(lo), y=factor(hi), fill=value)) + 
+cb.score %>% na.omit %>% ungroup %>%
+  mutate(lo=round(lo, 4), hi=round(hi, 4)) %>%
+  ggplot(aes(x=factor(lo), y=factor(hi), fill=value)) + 
   geom_tile() + facet_wrap(~model, scales='free')
 
 ##### Regression Models #####

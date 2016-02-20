@@ -42,14 +42,20 @@ PlotFoldMetricByMargin <- function(cv.res, metric){
     ylab('Accuracy Range (IQR)')
 }
 
-# PlotFoldMetric <- function(cv.res, metric){
-#   GetCVPerfSummary(cv.res) %>% 
-#     rename_(v_mean=paste0(metric, '_mean'), v_sd=paste0(metric, '_sd')) %>%
-#     arrange(v_mean) %>% mutate(model=factor(model, levels=model)) %>%
-#     ggplot(aes(x=model, y=v_mean, ymin=v_mean - v_sd, ymax=v_mean + v_sd, color=model)) +
-#     geom_pointrange() + coord_flip() + theme_bw() + ylab(metric) + 
-#     ggtitle(sprintf('CV %s Estimates', metric))
-# }
+PlotFoldConfusion <- function(cv.res){
+  cv.res$fold.summary %>% group_by(model, fold) %>% do({head(., 1)}) %>% ungroup %>%
+    select(model, fold, len, starts_with('cm.')) %>% group_by(model) %>% do({
+      d <- .
+      pcts <- d %>% select(starts_with('cm.'))
+      pcts %>% setNames(str_replace_all(names(pcts), 'cm\\.', ''))
+    }) %>% melt(id.vars='model') %>% 
+    ggplot(aes(x=model, y=value, color=model)) + 
+    geom_boxplot(alpha=.5, outlier.size=0, position = 'dodge', width = 0.5) +
+    geom_jitter(width = .3, alpha=.5) + 
+    facet_wrap(~variable, scales='free') + theme_bw() + 
+    xlab('Model') + ylab('Count') + 
+    ggtitle('Confusion Matrix Distributions')
+}
 
 PlotFoldMetric <- function(cv.res, metric){
   GetCVScalarStats(cv.res) %>% 
@@ -107,6 +113,20 @@ PlotAllFoldPR <- function(cv.res){
     geom_line() + theme_bw() +
     facet_wrap(~model.label) + xlab('Recall') + ylab('Precision') +
     ggtitle('CV PR (combined)')
+}
+
+
+PlotHoldOutConfusion <- function(ho.res){
+  ho.res$model.summary %>% group_by(model) %>% do({head(., 1)}) %>% ungroup %>%
+    select(model, len, starts_with('cm.')) %>% group_by(model) %>% do({
+      d <- .
+      pcts <- d %>% select(starts_with('cm.'))
+      pcts %>% setNames(str_replace_all(names(pcts), 'cm\\.', ''))
+    }) %>% melt(id.vars='model') %>% 
+    ggplot(aes(x=model, y=value, fill=model)) + geom_bar(stat='identity') +
+    facet_wrap(~variable, scales='free') + theme_bw() + 
+    xlab('Model') + ylab('Count') + 
+    ggtitle('Confusion Matrix Distributions')
 }
 
 PlotHoldOutMetric <- function(ho.res, metric){

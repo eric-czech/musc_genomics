@@ -172,20 +172,25 @@ GetResultSummary <- function(d, curve.type='lift'){
   pred <- prediction(d$y.pred.prob, d$y.test)
   cmat <- confusionMatrix(d$y.pred.class, d$y.test, positive='pos')
   
+  cts <- apply(as.data.frame(cmat$table), 1, function(x) c(sprintf('cm.pred.%s.true.%s', x[1], x[2]), x[3])) 
+  cts <- t(as.integer(cts[2,]) %>% setNames(cts[1,]))
+  
   # Extract desired measures
   auc <- performance(pred, 'auc')
   kappa <- as.numeric(cmat$overall['Kappa'])
   mcp <- coalesce(as.numeric(cmat$overall['McnemarPValue']), 1)
   acc <- as.numeric(cmat$overall['Accuracy'])
+  nir <- sum(d$y.test == 'neg') / length(d$y.test)
+  cacc <- acc - nir
   bacc <- as.numeric(cmat$byClass['Balanced Accuracy'])
   sens <- as.numeric(cmat$byClass['Sensitivity'])
   spec <- as.numeric(cmat$byClass['Specificity'])
   
-  if (tolower(curve.type) == 'roc') curve <- performance(pred, 'tpr', 'fpr') 
-  else if (tolower(curve.type) == 'pr') curve <- performance(pred, 'prec', 'rec')
-  else if (tolower(curve.type) == 'lift') curve <- performance(pred, 'lift', 'rpp')
-  else if (tolower(curve.type) == 'gain') curve <- performance(pred, 'tpr', 'rpp')
-  else stop(sprintf('Invalid curve type %s', curve.type))
+  if (tolower(curve.type) == 'roc') {curve <- performance(pred, 'tpr', 'fpr') }
+  else if (tolower(curve.type) == 'pr') {curve <- performance(pred, 'prec', 'rec')}
+  else if (tolower(curve.type) == 'lift') {curve <- performance(pred, 'lift', 'rpp')}
+  else if (tolower(curve.type) == 'gain') {curve <- performance(pred, 'tpr', 'rpp')}
+  else {stop(sprintf('Invalid curve type %s', curve.type))}
   
 #   margin.stats <- foreach(margin=seq(0, .4, by=.05), .combine=cbind) %do%{
 #     y.pred.adj <- d$y.pred.prob %>% sapply(function(p){
@@ -205,8 +210,9 @@ GetResultSummary <- function(d, curve.type='lift'){
   res <- data.frame(
     x=curve@x.values[[1]], y=curve@y.values[[1]], 
     t=curve@alpha.values[[1]], auc=auc@y.values[[1]],
-    acc=acc, bacc=bacc, spec=spec, sens=sens, kappa=kappa, mcp=mcp
-  )
+    acc=acc, bacc=bacc, spec=spec, sens=sens, kappa=kappa, mcp=mcp,
+    cacc=cacc, nir=nir, len=length(d$y.test)
+  ) %>% cbind(cts)
 #   res <- cbind(res, margin.stats)
 #   if (any(is.na(res[,'acc_margin_0.3'])))
 #     browser()

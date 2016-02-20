@@ -51,8 +51,13 @@ predict.browser <- function(fit, d, i){ browser() }
 bin.test <- function(d) d$y.test.bin
 reg.test <- function(d) d$y.test
 bin.train.sml <- function(d) d$X.train.sml
-bin.train.sml.ge <- function(d) d$X.train.sml[,GetFeatures(d, 'ge')]
-bin.train.sml.cn <- function(d) d$X.train.sml[,GetFeatures(d, 'cn')]
+
+feature.selector.ge <- function(d) d[, GetFeatures(d, 'ge')]
+feature.selector.cn <- function(d) d[, GetFeatures(d, 'cn')]
+feature.selector.mu <- function(d) d[, GetFeatures(d, 'mu')]
+bin.train.sml.ge <- function(d) feature.selector.ge(d$X.train.sml)
+bin.train.sml.cn <- function(d) feature.selector.cn(d$X.train.sml)
+bin.train.sml.mu <- function(d) feature.selector.mu(d$X.train.sml)
 
 bin.train.lrg <- function(d) d$X.train.lrg
 bin.train.pca <- function(d) d$X.train.pca
@@ -117,6 +122,31 @@ GetElasticNetModel <- function(name, alpha.start, alpha.grid, n.core, train.fun,
         method='glmnet', preProcess='zv', family='binomial', metric=bin.tgt.metric, 
         tuneGrid = expand.grid(.alpha = alpha.grid, .lambda=glmnet.lambda),
         trControl = bin.trctrl(idx, classProbs=T)
+      )
+    }
+  )
+}
+
+# GetDataSubsetModel
+GetPartitionedEnsembleModel <- function(name, model.ge, model.cn, model.mu, test.selector){
+  list(
+    name=name, test=test.selector,
+    train=function(d, idx, i, ...){
+      m <- list()
+      # Num core selection should happen in individual models
+      m$ge <- model.ge$train(d, idx, i, ...)
+      m$cn <- model.cn$train(d, idx, i, ...)
+      m$mu <- model.mu$train(d, idx, i, ...)
+      trControl <- trainControl(
+        method='cv', summaryFunction=ClassSummary,
+        savePredictions='final'
+      )
+      class(m) <- "caretList"
+      caretEnsemble(m, trControl=trControl)
+    }, predict=function(fit, d, i){ 
+      list(
+        prob=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)], type='prob'),
+        class=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)], type='raw')
       )
     }
   )

@@ -1,4 +1,18 @@
 
+GetDataSubsetModel <- function(caretModel, subset.selector){
+  m <- caretModel
+  m$fit <- function(x, y, wts, param, lev, last, classProbs, ...){
+    caretModel$fit(subset.selector(x), y, wts, param, lev, last, classProbs, ...)  
+  }
+  m$predict <- function(modelFit, newdata, submodels = NULL){
+    caretModel$predict(modelFit, subset.selector(newdata), submodels)  
+  }
+  m$prob <- function(modelFit, newdata, submodels = NULL){
+    caretModel$prob(modelFit, subset.selector(newdata), submodels)  
+  }
+  m
+}
+
 GetPLSModel <- function(){
   m <- getModelInfo(model = "pls", regex = FALSE)[[1]]
   m$fit <- function(x, y, wts, param, lev, last, classProbs, ...) {   
