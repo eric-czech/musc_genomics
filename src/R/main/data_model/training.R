@@ -70,7 +70,7 @@ trainer <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'),
                    cache.project=RESPONSE_TYPE, seed=SEED)
 trainer$generateFoldIndex(d.tr$y, CreateFoldIndex)
 fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=8, sml.num.p=.0001, 
-                                      lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pca.thresh=.99)
+                                      lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pls.comp=500)
 trainer$generateFoldData(d.tr$X, d.tr$y, fold.data.gen, GetDataSummarizer())
 
 
@@ -97,9 +97,12 @@ bin.sml.models$enet <- trainer$train(bin.model.enet.sml, enable.cache=ec)
 bin.sml.models$gbm <- trainer$train(bin.model.gbm.sml, enable.cache=ec)
 bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=ec)
 
+source('data_model/training_models.R')
+bin.sml.models$hdrda <- trainer$train(bin.model.hdrda.sml, enable.cache=F)
+
 # Under Construction
 
-source('data_model/training_models.R')
+
 #bin.sml.models$rda <- trainer$train(bin.model.rda.sml, enable.cache=F)
 #bin.lrg.models$scrda <- trainer$train(bin.model.scrda.lrg, enable.cache=F)
 #bin.sml.models$mars <- trainer$train(bin.model.mars.sml, enable.cache=ec)
@@ -149,7 +152,7 @@ table(var.imp$importance)
 
 
 ##### CV Results #####
-
+ 
 cv.res <- SummarizeTrainingResults(bin.sml.models, T, fold.summary=ResSummaryFun('pr'), model.summary=ResSummaryFun('pr'))
 RESULT_CACHE$store('cv_model_perf', cv.res)
 
@@ -235,7 +238,9 @@ bin.ens.sub1.mu <- bin.model(
   method=GetDataSubsetModel(getModelInfo('rf', regex=F)[[1]], feature.selector.mu), 
   preProcess='zv', tuneLength=5
 )
-bin.model.part.ens1 <- GetPartitionedEnsembleModel('bin.ens.sub1', bin.ens.sub1.ge, bin.ens.sub1.cn, bin.ens.sub1.mu, bin.test)
+bin.model.part.ens1 <- GetPartitionedEnsembleModel(
+  'bin.ens.sub1', bin.ens.sub1.ge, bin.ens.sub1.cn, bin.ens.sub1.mu, bin.test,
+  method='earth', tuneLength=10)
 bin.sml.models$bin.model.part.ens1 <- trainer$train(bin.model.part.ens1, enable.cache=F)
 
 ##### Classification Hold Out #####

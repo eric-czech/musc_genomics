@@ -60,7 +60,7 @@ GetTrainingData <- function(cache, response.type, response.selector, min.mutatio
       RemoveNA(row.threshold=.1) %>%                   # Remove rows with large % NA's
       RemoveRareMutations(c.mu, min.mutations) %>% # Remove cols for rare mutations
       mutate(response=ScaleVector(response))           # Scale response
-  
+    
     if (any(is.na(d.prep)))
       stop('Dataset contains unexpected NA values')
     d.prep
@@ -80,12 +80,12 @@ DichotomizeOutcome <- function(y, threshold) {
 
 GetFoldDataGenerator <- function(preproc, y.tresh, linear.only, n.core=8, 
                                  sml.num.p=.0001, lrg.num.p=.15, 
-                                 sml.bin.p=.15, lrg.bin.p=.15, pca.thresh=.95){    
+                                 sml.bin.p=.15, lrg.bin.p=.15, pls.comp=500){    
   function(X.train.all, y.train, X.test, y.test){
     # Apply feature selector
     loginfo('Running feature selection')
     registerDoMC(n.core)
-
+    
     c.cn <- GetFeatures(X.train.all, 'cn')
     c.ge <- GetFeatures(X.train.all, 'ge')
     c.numeric <- c(c.cn, c.ge)
@@ -101,19 +101,37 @@ GetFoldDataGenerator <- function(preproc, y.tresh, linear.only, n.core=8,
     loginfo('Running preprocessing')
     
     ## PCA preprocessing
-#     pp.pca.ge <- preProcess(X.train.all[,c.ge], method=c(preproc, 'pca'), thresh=pca.thresh)
-#     pp.pca.cn <- preProcess(X.train.all[,c.cn], method=c(preproc, 'pca'), thresh=pca.thresh)
-#     pred.pca <- function(d, c.sml){ cbind(
-#       predict(pp.pca.ge, d[,c.ge]) %>% setNames(paste0('ge.', names(.))),
-#       predict(pp.pca.cn, d[,c.cn]) %>% setNames(paste0('cn.', names(.))),
-#       d[, c.sml[c.sml %in% c.binary]]
-#     )}
+    #     pp.pca.ge <- preProcess(X.train.all[,c.ge], method=c(preproc, 'pca'), thresh=pca.thresh)
+    #     pp.pca.cn <- preProcess(X.train.all[,c.cn], method=c(preproc, 'pca'), thresh=pca.thresh)
+    #     pred.pca <- function(d, c.sml){ cbind(
+    #       predict(pp.pca.ge, d[,c.ge]) %>% setNames(paste0('ge.', names(.))),
+    #       predict(pp.pca.cn, d[,c.cn]) %>% setNames(paste0('cn.', names(.))),
+    #       d[, c.sml[c.sml %in% c.binary]]
+    #     )}
+    
     
     ## Standard preprocessing
     pp.lrg <- preProcess(X.train.lrg, method=preproc)
     pp.sml <- preProcess(X.train.sml, method=preproc)
     X.train.lrg <- predict(pp.lrg, X.train.lrg)
     X.train.sml <- predict(pp.sml, X.train.sml)
+    
+    ## PLS preprocessing
+    pp.std.ge <- preProcess(X.train.all[,c.ge], method=c('center', 'scale'))
+    pp.std.cn <- preProcess(X.train.all[,c.cn], method=c('center', 'scale'))
+    
+    X.train.ge <- predict(pp.std.ge, X.train.all[,c.ge])
+    X.train.cn <- predict(pp.std.cn, X.train.all[,c.cn])
+    
+    pp.pls.ge <- plsda(X.train.ge, y.train, ncomp = pls.comp)
+    pp.pls.cn <- plsda(X.train.cn, y.train, ncomp = pls.comp)
+    
+    pred.pls <- function(d, c.sml){ cbind(
+      pls::predict.mvr(pp.pls.ge, d[,c.ge], type = "scores") %>% setNames(paste0('ge.', names(.))),
+      pls::predict.mvr(pp.pls.cn, d[,c.cn], type = "scores") %>% setNames(paste0('cn.', names(.))),
+      d[, c.sml[c.sml %in% c.binary]]
+    )}
+    X.train.pls <- pred.pls(cbind(X.train.ge, X.train.cn), names(X.train.sml))
     #X.train.pca <- pred.pca(X.train.all, names(X.train.sml))
     
     # X.test may be null if this data preprocessing call is not for resampling iteration
@@ -121,18 +139,24 @@ GetFoldDataGenerator <- function(preproc, y.tresh, linear.only, n.core=8,
       X.test.lrg <- NULL
       X.test.sml <- NULL
       #X.test.pca <- NULL
+      X.test.pls <- NULL
     } else {
       X.test.lrg  <- predict(pp.lrg, X.test[,names(X.train.lrg)])
       X.test.sml  <- predict(pp.sml, X.test[,names(X.train.sml)])
       #X.test.pca <- pred.pca(X.test, names(X.train.sml))
+      
+      X.test.ge <- predict(pp.std.ge, X.test[,c.ge])
+      X.test.cn <- predict(pp.std.cn, X.test[,c.cn])
+      X.test.pls <- pred.pls(cbind(X.test.ge, X.test.cn), names(X.train.sml))
     }
     
     list(
       #preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml, pp.pca.ge=pp.pca.ge, pp.pca.cn=pp.pca.cn), 
-      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml),#, pp.pca.ge=pp.pca.ge, pp.pca.cn=pp.pca.cn), 
+      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml, pp.pls.ge=pp.pls.ge, pp.pls.cn=pp.pls.cn), 
+      #preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml),
       X.names=names(X.train.all),
-      X.train.sml=X.train.sml, X.train.lrg=X.train.lrg, #X.train.pca=X.train.pca,
-      X.test.sml=X.test.sml, X.test.lrg=X.test.lrg, #X.test.pca=X.test.pca,
+      X.train.sml=X.train.sml, X.train.lrg=X.train.lrg, X.train.pls=X.train.pls,
+      X.test.sml=X.test.sml, X.test.lrg=X.test.lrg, X.test.pls=X.test.pls,
       y.train=y.train, y.test=y.test,
       y.train.bin=DichotomizeOutcome(y.train, y.tresh), y.test.bin=DichotomizeOutcome(y.test, y.tresh)
     )
@@ -192,30 +216,30 @@ GetResultSummary <- function(d, curve.type='lift'){
   else if (tolower(curve.type) == 'gain') {curve <- performance(pred, 'tpr', 'rpp')}
   else {stop(sprintf('Invalid curve type %s', curve.type))}
   
-#   margin.stats <- foreach(margin=seq(0, .4, by=.05), .combine=cbind) %do%{
-#     y.pred.adj <- d$y.pred.prob %>% sapply(function(p){
-#       if (p < .5 - margin) 'neg' else if (p > .5 + margin) 'pos' else NA
-#     }) %>% factor(levels=c('neg', 'pos'))
-#     n.not.na <- sum(!is.na(y.pred.adj))
-#     acc.adj <- ifelse(n.not.na > 0, sum(y.pred.adj == d$y.test & !is.na(y.pred.adj)) / n.not.na, 0)
-#     n.pct <- n.not.na / length(y.pred.adj)
-#     n.pos.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'pos'); 
-#     n.neg.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'neg'); 
-#     tpr.adj <- ifelse(n.pos.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'pos', na.rm=T) / n.pos.adj, 0)
-#     tnr.adj <- ifelse(n.neg.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'neg', na.rm=T) / n.neg.adj, 0)
-#     res <- data.frame(acc=acc.adj, tpr=tpr.adj, tnr=tnr.adj, n.pct=n.pct)
-#     res %>% setNames(paste(names(res), margin, sep='_margin_'))
-#   }
-
+  #   margin.stats <- foreach(margin=seq(0, .4, by=.05), .combine=cbind) %do%{
+  #     y.pred.adj <- d$y.pred.prob %>% sapply(function(p){
+  #       if (p < .5 - margin) 'neg' else if (p > .5 + margin) 'pos' else NA
+  #     }) %>% factor(levels=c('neg', 'pos'))
+  #     n.not.na <- sum(!is.na(y.pred.adj))
+  #     acc.adj <- ifelse(n.not.na > 0, sum(y.pred.adj == d$y.test & !is.na(y.pred.adj)) / n.not.na, 0)
+  #     n.pct <- n.not.na / length(y.pred.adj)
+  #     n.pos.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'pos'); 
+  #     n.neg.adj <- sum(!is.na(y.pred.adj) & d$y.test == 'neg'); 
+  #     tpr.adj <- ifelse(n.pos.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'pos', na.rm=T) / n.pos.adj, 0)
+  #     tnr.adj <- ifelse(n.neg.adj > 0, sum(y.pred.adj == d$y.test & d$y.test == 'neg', na.rm=T) / n.neg.adj, 0)
+  #     res <- data.frame(acc=acc.adj, tpr=tpr.adj, tnr=tnr.adj, n.pct=n.pct)
+  #     res %>% setNames(paste(names(res), margin, sep='_margin_'))
+  #   }
+  
   res <- data.frame(
     x=curve@x.values[[1]], y=curve@y.values[[1]], 
     t=curve@alpha.values[[1]], auc=auc@y.values[[1]],
     acc=acc, bacc=bacc, spec=spec, sens=sens, kappa=kappa, mcp=mcp,
     cacc=cacc, nir=nir, len=length(d$y.test)
   ) %>% cbind(cts)
-#   res <- cbind(res, margin.stats)
-#   if (any(is.na(res[,'acc_margin_0.3'])))
-#     browser()
+  #   res <- cbind(res, margin.stats)
+  #   if (any(is.na(res[,'acc_margin_0.3'])))
+  #     browser()
   res
 }
 

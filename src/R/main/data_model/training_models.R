@@ -128,7 +128,8 @@ GetElasticNetModel <- function(name, alpha.start, alpha.grid, n.core, train.fun,
 }
 
 # GetDataSubsetModel
-GetPartitionedEnsembleModel <- function(name, model.ge, model.cn, model.mu, test.selector){
+GetPartitionedEnsembleModel <- function(name, model.ge, model.cn, model.mu, test.selector,
+                                        method='glm', tuneLength=1){
   list(
     name=name, test=test.selector,
     train=function(d, idx, i, ...){
@@ -142,7 +143,7 @@ GetPartitionedEnsembleModel <- function(name, model.ge, model.cn, model.mu, test
         savePredictions='final'
       )
       class(m) <- "caretList"
-      caretEnsemble(m, trControl=trControl)
+      caretStack(m, method=method, tuneLength=tuneLength, trControl=trControl)
     }, predict=function(fit, d, i){ 
       list(
         prob=predict(fit, newdata=d$X.test.sml[,names(d$X.test.sml)], type='prob'),
@@ -196,8 +197,23 @@ bin.model.scrda.sml <- bin.model(
 )
 
 bin.model.scrda.lrg <- bin.model(
-  'scrda.lrg', 4, bin.train.lrg, bin.predict.lrg, 
+  'scrda.lrg', 3, bin.train.lrg, bin.predict.lrg, 
   method=GetSCRDAModel(3), preProcess='zv', tuneLength=10
+)
+
+## HDRDA ###
+hdrda.grid <- rbind(
+  expand.grid(lambda=seq(0, 1, len = 6), gamma=c(0, 10^seq.int(-4, 4, len = 7)), shrinkage='ridge', stringsAsFactors=F),
+  expand.grid(lambda=seq(0, 1, len = 6), gamma=seq(0, 1, len = 8), shrinkage='convex', stringsAsFactors=F)
+)
+bin.model.hdrda.sml <- bin.model(
+  'hdrda.sml', 10, bin.train.sml, bin.predict.sml, 
+  method=GetHDRDAModel(), preProcess='zv', tuneGrid=hdrda.grid#tuneLength=10
+)
+
+bin.model.hdrda.lrg <- bin.model(
+  'hdrda.lrg', 3, bin.train.lrg, bin.predict.lrg, 
+  method=GetHDRDAModel(), preProcess='zv', tuneLength=5
 )
 
 

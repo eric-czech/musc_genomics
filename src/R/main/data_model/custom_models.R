@@ -13,6 +13,54 @@ GetDataSubsetModel <- function(caretModel, subset.selector){
   m
 }
 
+GetHDRDAModel <- function(){
+  list(
+    label = "High Dimensional Regularized Discriminant Analysis",
+    library = "sparsediscrim",
+    loop = NULL,
+    type = c('Classification'),
+    parameters = data.frame(
+      parameter = c('lambda', 'gamma', 'shrinkage'),
+      class = c('numeric', 'numeric', 'character'),
+      label = c('Lambda', 'Gamma', 'Shrinkage Type')
+    ),
+    grid = function(x, y, len = NULL, search = "grid") {
+      # See recommended hyperparameter settings at:
+      # https://github.com/ramhiser/sparsediscrim/blob/master/R/hdrda.r#L315
+      if(search == "grid") {
+        lambda <- seq(0, 1, len = len)
+        gamma_ridge <- c(0, 10^seq.int(-2, 4, len = len-1))
+        gamma_convex <- seq(0, 1, len = len)
+      } else {
+        lambda <- runif(len, min = 0, max = 1)
+        gamma_ridge <- runif(len, min = 10^-2, max = 10^4)
+        gamma_convex <- runif(len, min = 0, max = 1)
+      }
+      out <- rbind(
+        expand.grid(lambda=lambda, gamma=gamma_ridge, shrinkage='ridge'),
+        expand.grid(lambda=lambda, gamma=gamma_convex, shrinkage='convex')
+      )
+      out$shrinkage <- as.character(out$shrinkage)
+      out
+    },
+    fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+      sparsediscrim::hdrda(x, y, lambda=param$lambda, gamma=param$gamma, shrinkage_type=param$shrinkage)
+    },
+    predict = function(modelFit, newdata, submodels = NULL) {
+      r <- predict(modelFit, newdata)
+      r$class
+    },
+    prob = function(modelFit, newdata, submodels = NULL) {
+      r <- predict(modelFit, newdata)
+      r$posterior
+    },
+    levels = function(x) x$obsLevels,
+    tags = c("Discriminant Analysis", "Linear Classifier"),
+    sort = function(x) x[order(x$lambda, x$gamma, x$shrinkage),]
+  )
+}
+
+
 GetPLSModel <- function(){
   m <- getModelInfo(model = "pls", regex = FALSE)[[1]]
   m$fit <- function(x, y, wts, param, lev, last, classProbs, ...) {   
