@@ -26,6 +26,10 @@ bin.predict.sml <- function(fit, d, i){ list(
   prob=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='prob')[,1], 
   class=predict(fit, d$X.test.sml[,names(d$X.train.sml)], type='raw')
 )}
+bin.predict.rfe.sml <- function(fit, d, i){ 
+  preds <- predict(fit, d$X.test.sml[,names(d$X.train.sml)])
+  list(prob=preds[,2], class=preds[,1])
+}
 bin.predict.sml.ge <- function(fit, d, i){ 
   cols <- GetFeatures(d$X.train.sml, 'ge')
   list(
@@ -62,6 +66,11 @@ bin.train.sml.mu <- function(d) feature.selector.mu(d$X.train.sml)
 bin.train.lrg <- function(d) d$X.train.lrg
 bin.train.pca <- function(d) d$X.train.pca
 
+get.weight.fun <- function(positive.weight){
+  function(y) ifelse(y == 'pos', positive.weight, 1)
+}
+bin.weights <- get.weight.fun(5)
+
 
 # Note that this is called by caret with non-predicted data using an arbitrary
 # sample of the training data (10 rows) to get performance measure names 1 time per train
@@ -84,9 +93,9 @@ ClassSummary <- function(data, ...) {
   res
 }
 
-bin.trctrl <- function(index, ...) trainControl(
+bin.trctrl <- function(index, returnData=F, ...) trainControl(
   method='cv', summaryFunction=ClassSummary,
-  savePredictions='final', index=index, returnData=F,
+  savePredictions='final', index=index, returnData=returnData,
   ...)
 
 reg.trctrl <- function(index, ...) trainControl(
@@ -95,15 +104,60 @@ reg.trctrl <- function(index, ...) trainControl(
   ...)
 
 
-bin.model <- function(name, n.core, train.fun, pred.fun, ...){
+bin.model <- function(name, n.core, train.fun, pred.fun, weight.fun=NULL, ...){
   list(
     name=name, predict=pred.fun, test=bin.test,
     train=function(d, idx, i){
       registerDoMC(n.core)
+      weights <- NULL
+      if (!is.null(weight.fun))
+        weights <- weight.fun(d$y.train.bin)
       train(
         train.fun(d), d$y.train.bin, ...,
-        metric=bin.tgt.metric,
+        metric=bin.tgt.metric, weights=weights,
         trControl = bin.trctrl(idx, classProbs=T)
+      )
+    }
+  )
+}
+
+bin.rfe.size.fun <- function(ncol){
+  c(1, 5, 10, 25, 50, 100)
+}
+rfeFuncs <- caretFuncs
+rfeFuncs$rank <- function (object, x, y) {
+  vimp <- varImp(object, scale = FALSE)$importance
+  if (object$modelType == "Regression") {
+    vimp <- vimp[order(vimp[, 1], decreasing = TRUE), , drop = FALSE]
+  }
+  else {
+    if (all(levels(y) %in% colnames(vimp))) {
+      avImp <- apply(vimp[, levels(y), drop = TRUE], 1, 
+                     mean)
+      vimp$Overall <- avImp
+    }
+  }
+  vimp$var <- rownames(vimp)
+  vimp
+}
+bin.rfe.model <- function(name, n.core, train.fun, pred.fun, sizes.fun=bin.rfe.size.fun, weight.fun=NULL, ...){
+  list(
+    name=name, predict=pred.fun, test=bin.test,
+    train=function(d, idx, i){
+      registerDoMC(n.core)
+      sizes = sizes.fun(ncol(train.fun(d)))
+      weights <- NULL
+      if (!is.null(weight.fun))
+        weights <- weight.fun(d$y.train.bin)
+      rfectrl <- rfeControl(
+        functions=rfeFuncs, index=idx,
+        returnResamp="final", verbose = T, allowParallel = F
+      )
+      rfe(
+        train.fun(d), d$y.train.bin, ...,
+        rfeControl=rfectrl, metric=bin.tgt.metric, 
+        weights=weights, sizes=sizes, 
+        trControl=bin.trctrl(NULL, classProbs=T, returnData=T)
       )
     }
   )
@@ -111,16 +165,20 @@ bin.model <- function(name, n.core, train.fun, pred.fun, ...){
 
 ##### Model Wrapper Functions #####
 
-GetElasticNetModel <- function(name, alpha.start, alpha.grid, n.core, train.fun, pred.fun){
+GetElasticNetModel <- function(name, alpha.start, alpha.grid, n.core, train.fun, pred.fun, weight.fun=NULL){
   list(
     name=name, predict=pred.fun, test=bin.test,
     train=function(d, idx, ...){
       registerDoMC(n.core)
+      
       glmnet.lambda <- GetGlmnetLambda(train.fun(d), d$y.train.bin, alpha=alpha.start, family='binomial')
+      weights <- NULL
+      if (!is.null(weight.fun))
+        weights <- weight.fun(d$y.train.bin)
       train(
         train.fun(d), d$y.train.bin, 
         method='glmnet', preProcess='zv', family='binomial', metric=bin.tgt.metric, 
-        tuneGrid = expand.grid(.alpha = alpha.grid, .lambda=glmnet.lambda),
+        weights=weights, tuneGrid = expand.grid(.alpha = alpha.grid, .lambda=glmnet.lambda),
         trControl = bin.trctrl(idx, classProbs=T)
       )
     }
@@ -176,6 +234,9 @@ GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, ...)
   )
 }
 
+##### RFE Models #####
+
+
 
 ##### Classification Models #####
 
@@ -183,8 +244,11 @@ GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, ...)
 ### ENET ###
 alpha.grid <- c(.001, seq(.1, .9, length.out=13), .999)
 bin.model.lasso.sml <- GetElasticNetModel('lasso.sml', 1, 1, 5, bin.train.sml, bin.predict.sml)
+bin.model.lasso.wt.sml <- GetElasticNetModel('lasso.wt.sml', 1, 1, 5, bin.train.sml, bin.predict.sml, bin.weights)
 bin.model.ridge.sml <- GetElasticNetModel('ridge.sml', 0, 0, 5, bin.train.sml, bin.predict.sml)
+bin.model.ridge.wt.sml <- GetElasticNetModel('ridge.wt.sml', 0, 0, 5, bin.train.sml, bin.predict.sml, bin.weights)
 bin.model.enet.sml <- GetElasticNetModel('enet.sml', .5, alpha.grid, 5, bin.train.sml, bin.predict.sml)
+bin.model.enet.wt.sml <- GetElasticNetModel('enet.wt.sml', .5, alpha.grid, 5, bin.train.sml, bin.predict.sml, bin.weights)
 
 bin.model.lasso.pca <- GetElasticNetModel('lasso.pca', 1, 1, 5, bin.train.pca, bin.predict.pca)
 bin.model.ridge.pca <- GetElasticNetModel('ridge.pca', 0, 0, 5, bin.train.pca, bin.predict.pca)
@@ -199,6 +263,14 @@ bin.model.scrda.sml <- bin.model(
 bin.model.scrda.lrg <- bin.model(
   'scrda.lrg', 3, bin.train.lrg, bin.predict.lrg, 
   method=GetSCRDAModel(3), preProcess='zv', tuneLength=10
+)
+
+test.rfe.size.fun <- function(ncol){
+  c(10, 25, 50, 75, 100, 200)
+}
+bin.model.scrda.rfe.sml <- bin.rfe.model(
+  'scrda.rfe', 10, bin.train.sml, bin.predict.rfe.sml, sizes.fun = test.rfe.size.fun,
+  method=GetSCRDAModel(8, var.imp=F), tuneLength=8
 )
 
 ## HDRDA ###
@@ -250,6 +322,12 @@ bin.model.svm.linear.pca <- bin.model(
   method='svmLinear', preProcess='zv', tuneLength=35
 )
 
+bin.model.svm.rfe.wt.sml <- bin.rfe.model(
+  'svm.wt.rfe', 2, bin.train.sml, bin.predict.sml, weight.fun=bin.weights,
+  method='svmRadialWeights', preProcess='zv', tuneLength=15
+)
+  
+  
 ### PLS ###
 bin.model.pls.sml <- bin.model(
   'pls.sml', 3, bin.train.sml, bin.predict.sml, 
@@ -293,6 +371,14 @@ bin.model.knn.pca <- bin.model(
   'knn.pca', 5, bin.train.pca, bin.predict.pca,
   method='knn', preProcess='zv', tuneLength=15
 )
+test.knn.size.fun <- function(ncol){
+  c(10, 50, 100)
+}
+bin.model.knn.rfe.sml <- bin.rfe.model(
+  'knn.rfe', 5, bin.train.sml, bin.predict.rfe.sml, sizes.fun = test.knn.size.fun,
+  method='knn', tuneLength=2
+)
+
 
 ### PAM ###
 bin.model.pam.sml <- bin.model(
@@ -336,9 +422,26 @@ bin.model.gbm.sml <- bin.model(
   'gbm.sml', 5, bin.train.sml, bin.predict.sml, 
   method='gbm', preProcess='zv', bag.fraction=.3, tuneLength=5, verbose=F
 )
+bin.gbm.grid <- expand.grid(
+  interaction.depth = c(1,2,3),
+  n.trees=c(50, 250),
+  shrinkage=10^(seq(-5, -1, len=4)),
+  n.minobsinnode=c(5, 12)
+)
+bin.model.gbm.wt.sml <- bin.model(
+  'gbm.wt.sml', 5, bin.train.sml, bin.predict.sml, weight.fun=bin.weights,
+  method='gbm', preProcess='zv', tuneGrid=bin.gbm.grid, verbose=F, bag.fraction=.3
+)
 bin.model.gbm.pca <- bin.model(
   'gbm.pca', 5, bin.train.pca, bin.predict.pca,
   method='gbm', preProcess='zv', bag.fraction=.3, tuneLength=5, verbose=F
+)
+
+### C5.0 ###
+
+bin.model.c50.wt.sml <- bin.model(
+  'c50.wt.sml', 5, bin.train.sml, bin.predict.sml, weight.fun=bin.weights,
+  method='C5.0', preProcess='zv', tuneLength=2
 )
 
 ### ET ###

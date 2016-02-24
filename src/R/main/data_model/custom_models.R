@@ -86,7 +86,7 @@ GetRDAModel <- function(){
   m
 }
 
-GetSCRDAModel <- function(max.delta=3){
+GetSCRDAModel <- function(max.delta=3, var.imp=T){
   m <- list(type = "Classification", library = "rda", loop = NULL)
   params <- data.frame(
     parameter=c('alpha', 'delta', 'len'),
@@ -173,7 +173,18 @@ GetSCRDAModel <- function(max.delta=3){
       }
       get.predictions(modelFit, newdata, submodels, 'posterior', transform)
     },
-    varImp = function(object, estimate = NULL, ...) {
+    #varImp = ,
+    predictors = function(x, ...) {
+      browser()
+      rownames(x$projection)
+    },
+    levels = function(x) {
+      browser()
+      x$obsLevels
+    }
+  )
+  if (var.imp){
+    m$varImp <- function(object, estimate = NULL, ...) {
       params <- list(...)
       if (is.null(params$alpha) || is.null(params$delta))
         stop('Variable importance for SCRDA is only possible when specifying alpha and delta arguments')
@@ -184,16 +195,9 @@ GetSCRDAModel <- function(max.delta=3){
       if (!is.null(object$x.names))
         rownames(var.imp) <- object$x.names
       var.imp
-    },
-    predictors = function(x, ...) {
-      browser()
-      rownames(x$projection)
-    },
-    levels = function(x) {
-      browser()
-      x$obsLevels
     }
-  )
+  }
+  m
 }
 
 

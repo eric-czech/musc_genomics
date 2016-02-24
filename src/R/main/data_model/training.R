@@ -85,20 +85,51 @@ bin.lrg.models <- list()
 
 # Complete (takes about 2 hr 30 minutes to run all of the following)
 ec <- T
+
+# source('data_model/training_models.R')
 bin.sml.models$svm.radial.sml <- trainer$train(bin.model.svm.radial.sml, enable.cache=ec)
+bin.sml.models$svm.rfe.wt.sml <- trainer$train(bin.model.svm.rfe.wt.sml, enable.cache=ec)
+
 bin.sml.models$svm.linear.sml <- trainer$train(bin.model.svm.linear.sml, enable.cache=ec)
 bin.sml.models$pls <- trainer$train(bin.model.pls.sml, enable.cache=ec)
 bin.sml.models$pam <- trainer$train(bin.model.pam.sml, enable.cache=ec)
 bin.sml.models$knn <- trainer$train(bin.model.knn.sml, enable.cache=ec)
+bin.sml.models$knn.rfe <- trainer$train(bin.model.knn.rfe.sml, enable.cache=ec)
+
 bin.sml.models$rf <- trainer$train(bin.model.rf.sml, enable.cache=ec)
 bin.sml.models$lasso <- trainer$train(bin.model.lasso.sml, enable.cache=ec)
+bin.sml.models$lasso.wt <- trainer$train(bin.model.lasso.wt.sml, enable.cache=ec)
 bin.sml.models$ridge <- trainer$train(bin.model.ridge.sml, enable.cache=ec)
+bin.sml.models$ridge.wt <- trainer$train(bin.model.ridge.wt.sml, enable.cache=ec)
 bin.sml.models$enet <- trainer$train(bin.model.enet.sml, enable.cache=ec)
+bin.sml.models$enet.wt <- trainer$train(bin.model.enet.wt.sml, enable.cache=ec)
 bin.sml.models$gbm <- trainer$train(bin.model.gbm.sml, enable.cache=ec)
+bin.sml.models$gbm.wt <- trainer$train(bin.model.gbm.wt.sml, enable.cache=ec)
+bin.sml.models$c50.wt <- trainer$train(bin.model.c50.wt.sml, enable.cache=ec)
 bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=ec)
+bin.sml.models$scrda.rfe <- trainer$train(bin.model.scrda.rfe.sml, enable.cache=T)
+bin.sml.models$hdrda <- trainer$train(bin.model.hdrda.sml, enable.cache=ec)
 
-source('data_model/training_models.R')
-bin.sml.models$hdrda <- trainer$train(bin.model.hdrda.sml, enable.cache=F)
+### RFE Tests
+subsets <- c(10, 50, 100, 500)
+
+rfectrl <- rfeControl(
+  functions=caretFuncs, method = "cv", number = 10,
+  returnResamp="final", verbose = TRUE
+)
+trainctrl <- trainControl(classProbs= T, method='cv', number=3)
+caretFuncs$summary <- defaultSummary
+set.seed(326) 
+
+registerDoMC(1)
+dt <- trainer$getFoldData()
+rfetest <- rfe(
+  dt[[1]]$data$X.train.sml, dt[[1]]$data$y.train.bin,
+  sizes = subsets,
+  rfeControl=rfectrl, method='svmRadial', metric='Kappa', trControl=trainctrl,
+  tuneLength=3
+)
+
 
 # Under Construction
 
@@ -240,7 +271,7 @@ bin.ens.sub1.mu <- bin.model(
 )
 bin.model.part.ens1 <- GetPartitionedEnsembleModel(
   'bin.ens.sub1', bin.ens.sub1.ge, bin.ens.sub1.cn, bin.ens.sub1.mu, bin.test,
-  method='earth', tuneLength=10)
+  method='glm')
 bin.sml.models$bin.model.part.ens1 <- trainer$train(bin.model.part.ens1, enable.cache=F)
 
 ##### Classification Hold Out #####
