@@ -17,6 +17,7 @@ reg.tgt.metric <- 'RMSE'
 ##### Utility Functions #####
 
 ShowBestTune <- function(model){ sapply(model, function(m) m$fit$bestTune )}
+ShowBestSubset <- function(model){ sapply(model, function(m) m$fit$bestSubset )}
 
 reg.predict.sml <- function(fit, d, i){ predict(fit, d$X.test.sml[,names(d$X.train.sml)]) }
 reg.predict.lrg <- function(fit, d, i){ predict(fit, d$X.test.lrg[,names(d$X.train.lrg)]) }
@@ -121,43 +122,27 @@ bin.model <- function(name, n.core, train.fun, pred.fun, weight.fun=NULL, ...){
   )
 }
 
-bin.rfe.size.fun <- function(ncol){
-  c(1, 5, 10, 25, 50, 100)
-}
-rfeFuncs <- caretFuncs
-rfeFuncs$rank <- function (object, x, y) {
-  vimp <- varImp(object, scale = FALSE)$importance
-  if (object$modelType == "Regression") {
-    vimp <- vimp[order(vimp[, 1], decreasing = TRUE), , drop = FALSE]
-  }
-  else {
-    if (all(levels(y) %in% colnames(vimp))) {
-      avImp <- apply(vimp[, levels(y), drop = TRUE], 1, 
-                     mean)
-      vimp$Overall <- avImp
-    }
-  }
-  vimp$var <- rownames(vimp)
-  vimp
-}
+bin.rfe.size.fun <- function(nrow, ncol){ c(1, 5, 10, 25, 50, 100) }
 bin.rfe.model <- function(name, n.core, train.fun, pred.fun, sizes.fun=bin.rfe.size.fun, weight.fun=NULL, ...){
   list(
     name=name, predict=pred.fun, test=bin.test,
     train=function(d, idx, i){
       registerDoMC(n.core)
-      sizes = sizes.fun(ncol(train.fun(d)))
+      sizes = sizes.fun(nrow(train.fun(d)), ncol(train.fun(d)))
       weights <- NULL
       if (!is.null(weight.fun))
         weights <- weight.fun(d$y.train.bin)
       rfectrl <- rfeControl(
-        functions=rfeFuncs, index=idx,
-        returnResamp="final", verbose = T, allowParallel = F
+        functions=caretFuncs, index=idx, 
+        saveDetails=T, returnResamp='final', 
+        verbose = T, allowParallel = F
       )
       rfe(
         train.fun(d), d$y.train.bin, ...,
         rfeControl=rfectrl, metric=bin.tgt.metric, 
         weights=weights, sizes=sizes, 
-        trControl=bin.trctrl(NULL, classProbs=T, returnData=T)
+        # Fold CV run for inner models
+        trControl=bin.trctrl(NULL, number=5, classProbs=T, returnData=T, verboseIter=T)
       )
     }
   )
@@ -211,19 +196,23 @@ GetPartitionedEnsembleModel <- function(name, model.ge, model.cn, model.mu, test
   )
 }
 
-GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, ...){
-  args <- list(...)
+##### Ensemble Models #####
+
+GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, trControl=NULL, ...){
+  margs <- list(...)
   list(
     name=name, test=test.selector,
     train=function(d, idx, i, ...){
       registerDoMC(1)
       m <- lapply(models, function(m) m(i))
       class(m) <- "caretList"
-      trControl <- trainControl(
-        method='cv', summaryFunction=ClassSummary,
-        savePredictions='final'
-      )
-      a <- args
+      if (is.null(trControl)){
+        trControl <- trainControl(
+          method='cv', number=5, summaryFunction=ClassSummary,
+          savePredictions='final'
+        )
+      }
+      a <- margs
       a$trControl <- trControl
       a$method <- method
       a$all.models <- m
@@ -233,6 +222,37 @@ GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, ...)
     }
   )
 }
+
+GetGlmnetEnsemble <- function(models, name){
+  GetEnsembleModel(models, name, bin.test,  bin.predict.ens.sml, 
+                   method='glmnet', tuneLength=10, metric=bin.tgt.metric)
+}
+
+GetAvgEnsemble <- function(models, name){
+  model <- do.call('GetEnsembleAveragingModel', ENS_AVG_DEFAULT_CONVERTERS)
+  GetEnsembleModel(models, name, bin.test,  
+                   bin.predict.ens.sml, method=model,
+                   metric=bin.tgt.metric, trControl=trainControl(method='none', savePredictions = 'final'))
+}
+
+GetQuantileEnsemble <- function(models, name){
+  GetEnsembleModel(models, name, bin.test,  
+                   bin.predict.ens.sml, method=GetEnsembleQuantileModel(), 
+                   tuneGrid=data.frame(quantile=seq(.25, .75, len=10)),
+                   metric=bin.tgt.metric, trControl=trainControl(method='cv', number=5, savePredictions = 'final'))
+}
+
+
+# bin.model.ens.rfe <- bin.rfe.model(
+#   'ens.rfe', 5, bin.train.sml, bin.predict.rfe.sml, 
+#   sizes.fun = function(nrow, ncol){ c(50, 75, 100, 150, 200, 250, 300, 350, 500)},
+#   
+# )
+
+bin.model.scrda.rfe.sml <- bin.rfe.model(
+  'scrda.rfe', 8, bin.train.sml, bin.predict.rfe.sml, sizes.fun = test.rfe.size.fun,
+  method=GetSCRDAModel(8, var.imp=F), tuneLength=8, preProcess='zv'
+)
 
 ##### RFE Models #####
 
@@ -265,12 +285,15 @@ bin.model.scrda.lrg <- bin.model(
   method=GetSCRDAModel(3), preProcess='zv', tuneLength=10
 )
 
+# Do not make this too small or scrda will fail with error:
+# In eval(expr, envir, enclos) :
+#   model fit failed for Fold08: alpha=0, delta=0, len=8 Error in La.svd(x, nu, nv) : error code 1 from Lapack routine 'dgesdd'
 test.rfe.size.fun <- function(ncol){
-  c(10, 25, 50, 75, 100, 200)
+  c(50, 75, 100, 200)
 }
 bin.model.scrda.rfe.sml <- bin.rfe.model(
-  'scrda.rfe', 10, bin.train.sml, bin.predict.rfe.sml, sizes.fun = test.rfe.size.fun,
-  method=GetSCRDAModel(8, var.imp=F), tuneLength=8
+  'scrda.rfe', 8, bin.train.sml, bin.predict.rfe.sml, sizes.fun = test.rfe.size.fun,
+  method=GetSCRDAModel(8, var.imp=F), tuneLength=8, preProcess='zv'
 )
 
 ## HDRDA ###
@@ -282,32 +305,45 @@ bin.model.hdrda.sml <- bin.model(
   'hdrda.sml', 10, bin.train.sml, bin.predict.sml, 
   method=GetHDRDAModel(), preProcess='zv', tuneGrid=hdrda.grid#tuneLength=10
 )
-
 bin.model.hdrda.lrg <- bin.model(
   'hdrda.lrg', 3, bin.train.lrg, bin.predict.lrg, 
   method=GetHDRDAModel(), preProcess='zv', tuneLength=5
+)
+
+hdrda.rfe.grid <- expand.grid(lambda=seq(0, 1, len = 5), gamma=seq(0, 1, len = 5), shrinkage='convex', stringsAsFactors=F)
+bin.model.hdrda.rfe.sml <- bin.rfe.model(
+  'hdrda.rfe', 10, bin.train.sml, bin.predict.rfe.sml, 
+  sizes.fun = function(ncol){ c(50, 75, 100, 150, 200, 250, 300)},
+  method=GetHDRDAModel(), tuneGrid=hdrda.rfe.grid, preProcess='zv'
 )
 
 
 
 ### RDA ###
 bin.model.rda.sml <- bin.model(
-  'rda.sml', 1, bin.train.sml, bin.predict.sml, 
-  method=GetRDAModel(), preProcess='zv', tuneLength=1
+  'rda.sml', 3, bin.train.sml, bin.predict.sml, 
+  method=GetRDAModel(), preProcess='zv', 
+  tuneGrid=expand.grid(.lambda=c(.1, .5, .9), .gamma=c(.1, .5, .9))
 )
-
+bin.model.rda.pca <- bin.model(
+  'rda.pca', 3, bin.train.pca, bin.predict.pca,
+  method=GetRDAModel(), preProcess='zv', 
+  tuneGrid=expand.grid(.lambda=c(.1, .5, .9), .gamma=c(.1, .5, .9))
+)
 bin.model.slda.sml <- bin.model(
   'slda.sml', 1, bin.train.sml.ge, bin.predict.sml.ge, 
   method='PenalizedLDA', preProcess='zv', tuneLength=1
 )
 
 
-
-
 ### SVM ###
 bin.model.svm.radial.sml <- bin.model(
   'svm.radial.sml', 6, bin.train.sml, bin.predict.sml,
   method='svmRadial', preProcess='zv', tuneLength=25
+)
+bin.model.svm.wt.sml <- bin.model(
+  'svm.wt.sml', 6, bin.train.sml, bin.predict.sml,
+  method='svmRadialWeights', preProcess='zv', tuneLength=10
 )
 bin.model.svm.radial.pca <- bin.model(
   'svm.radial.pca', 6, bin.train.pca, bin.predict.pca, 
@@ -321,13 +357,18 @@ bin.model.svm.linear.pca <- bin.model(
   'svm.linear.pca', 6, bin.train.pca, bin.predict.pca, 
   method='svmLinear', preProcess='zv', tuneLength=35
 )
-
-bin.model.svm.rfe.wt.sml <- bin.rfe.model(
-  'svm.wt.rfe', 2, bin.train.sml, bin.predict.sml, weight.fun=bin.weights,
-  method='svmRadialWeights', preProcess='zv', tuneLength=15
+bin.model.svm.rfe.sml <- bin.rfe.model(
+  'svm.rfe', 6, bin.train.sml, bin.predict.rfe.sml, 
+  sizes.fun = function(nrow, ncol){ c(50, 75, 100, 150, 200, 250, 300, 350, 500)},
+  method='svmRadial', tuneLength=10, preProcess='zv'
 )
-  
-  
+bin.model.svm.rfe.wt.sml <- bin.rfe.model(
+  'svm.wt.rfe', 6, bin.train.sml, bin.predict.rfe.sml, 
+  sizes.fun = function(nrow, ncol){ c(50, 75, 100, 150, 200, 250, 300, 350, 500)},
+  method='svmRadialWeights', tuneLength=6, preProcess='zv'
+)
+
+
 ### PLS ###
 bin.model.pls.sml <- bin.model(
   'pls.sml', 3, bin.train.sml, bin.predict.sml, 
@@ -350,18 +391,6 @@ bin.model.mars.pca <- bin.model(
   method='earth', preProcess='zv', tuneLength=10
 )
 
-### RDA ###
-bin.model.rda.sml <- bin.model(
-  'rda.sml', 3, bin.train.sml, bin.predict.sml, 
-  method=GetRDAModel(), preProcess='zv', 
-  tuneGrid=expand.grid(.lambda=c(.1, .5, .9), .gamma=c(.1, .5, .9))
-)
-bin.model.rda.pca <- bin.model(
-  'rda.pca', 3, bin.train.pca, bin.predict.pca,
-  method=GetRDAModel(), preProcess='zv', 
-  tuneGrid=expand.grid(.lambda=c(.1, .5, .9), .gamma=c(.1, .5, .9))
-)
-
 ### KNN ###
 bin.model.knn.sml <- bin.model(
   'knn.sml', 5, bin.train.sml, bin.predict.sml, 
@@ -371,12 +400,10 @@ bin.model.knn.pca <- bin.model(
   'knn.pca', 5, bin.train.pca, bin.predict.pca,
   method='knn', preProcess='zv', tuneLength=15
 )
-test.knn.size.fun <- function(ncol){
-  c(10, 50, 100)
-}
 bin.model.knn.rfe.sml <- bin.rfe.model(
-  'knn.rfe', 5, bin.train.sml, bin.predict.rfe.sml, sizes.fun = test.knn.size.fun,
-  method='knn', tuneLength=2
+  'knn.rfe', 8, bin.train.sml, bin.predict.rfe.sml, 
+  sizes.fun = function(nrow, ncol){ c(150, 200, 250, 300, 350, 400, 450, 500) },
+  method='knn', tuneLength=10
 )
 
 
@@ -441,7 +468,7 @@ bin.model.gbm.pca <- bin.model(
 
 bin.model.c50.wt.sml <- bin.model(
   'c50.wt.sml', 5, bin.train.sml, bin.predict.sml, weight.fun=bin.weights,
-  method='C5.0', preProcess='zv', tuneLength=2
+  method='C5.0', preProcess='zv', tuneLength=4
 )
 
 ### ET ###

@@ -169,6 +169,7 @@ GetSCRDAModel <- function(max.delta=3, var.imp=T){
       transform <- function(pred) {
         dimnames(pred) <- unname(dimnames(pred))
         dimnames(pred)[[2]] <- modelFit$obsLevels
+        pred[is.na(pred)] <- 0
         pred
       }
       get.predictions(modelFit, newdata, submodels, 'posterior', transform)
@@ -201,43 +202,151 @@ GetSCRDAModel <- function(max.delta=3, var.imp=T){
 }
 
 
-# getPLSWrappedModel <- function(model){
-#   #' Wraps a given classifier in a PLS preprocessor
-#   #' Taken from: http://stackoverflow.com/questions/21092895/how-to-custom-a-model-in-caret-to-perform-pls-classifer-two-step-classificaton
-#   param.df <- cbind(model$parameters, data.frame(parameter='ncomp', class='numeric', label='#Components'))
-#   m <- list(
-#     label = "PLS-RF",
-#     library = c("pls", "randomForest"),
-#     type = "Classification",
-#     parameters = data.frame(p),
-#     grid = function(x, y, len = NULL) {
-#       grid <- model$grid(x, y, len=len)
-#       grid <- expand.grid(grid, ncomp = seq(1, min(ncol(x) - 1, len), by = 1))
-#       grid
-#     },
-#     loop = NULL,
-#     fit = function(x, y, wts, param, lev, last, classProbs, ...) { 
-#       ## First fit the pls model, generate the training set scores,
-#       ## then attach what is needed to the random forest object to 
-#       ## be used later
-#       pre <- plsda(x, y, ncomp = param$ncomp)
-#       scores <- pls:::predict.mvr(pre, x, type = "scores")
-#       mod <- model$fit(scores, y, wts, param, lev, last, classProbs, ...)
-#       mod$projection <- pre$projection
-#       mod
-#     },
-#     predict = function(modelFit, newdata, submodels = NULL) {       
-#       scores <- as.matrix(newdata)  %*% modelFit$projection
-#       model$predict(modelFit, scores, submodels=submodels, type='raw')
-#     },
-#     prob = function(modelFit, newdata, submodels = NULL) {
-#       scores <- as.matrix(newdata)  %*% modelFit$projection
-#       model$predict(modelFit, scores, submodels=submodels, type='prob')
-#     },
-#     varImp = function(object, estimate = NULL, ...) {
-#       model$varImp(object, estimate=estimate, ...)
-#     },
-#     predictors = function(x, ...) rownames(x$projection),
-#     levels = function(x) x$obsLevels,
-#     sort = function(x) x[order(x[,1]),])
-# }
+MOST_FREQUENT <- function(x, lvl) names(sort(table(x), decreasing=TRUE)[1])
+CLASS_FREQUENCY <- function(x, lvl) sum(x == lvl[1])/length(x)
+SPLIT_MEAN_PROB_ON_.5 <- function(x, lvl) ifelse(mean(x) < .5, lvl[2], lvl[1])
+MEAN_PROB <- function(x, lvl) mean(x)
+
+ENS_AVG_DEFAULT_CONVERTERS <- list(
+  class.to.class=function(x, lvl) names(sort(table(x), decreasing=TRUE)[1]), 
+  class.to.prob=function(x, lvl) sum(x == lvl[1])/length(x), 
+  prob.to.class=function(x, lvl) ifelse(mean(x) < .5, lvl[2], lvl[1]),
+  prob.to.prob=function(x, lvl) mean(x)
+)
+
+GetEnsembleAveragingModel <- function(
+  class.to.class=MOST_FREQUENT, 
+  class.to.prob=CLASS_FREQUENCY, 
+  prob.to.class=SPLIT_MEAN_PROB_ON_.5,
+  prob.to.prob=MEAN_PROB){
+  list(
+    label = "Averaging Model",
+    library = NULL,
+    loop = NULL,
+    type = c("Classification"),
+    parameters = data.frame(parameter = "parameter", class = "character", label = "parameter"),
+    grid = function(x, y, len = NULL, search = "grid") data.frame(parameter="none"),
+    fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+      list(lev=lev)
+    },
+    predict = function(modelFit, newdata, submodels = NULL) {
+      all.factors <- all(sapply(newdata, is.factor)) || all(sapply(newdata, is.character))
+      all.numeric <- all(sapply(newdata, is.numeric))
+      if (!all.factors && !all.numeric) stop(paste(
+        'Aggregating model only works if training data contains',
+        'all factors OR all numeric values'
+      ))
+      
+      if (all.factors) p <- apply(newdata, 1, class.to.class, modelFit$lev)
+      else p <- apply(newdata, 1, prob.to.class, modelFit$lev)
+      
+      factor(p, levels=modelFit$lev)
+    },
+    prob = function(modelFit, newdata, submodels = NULL) {
+      all.factors <- all(sapply(newdata, is.factor)) || all(sapply(newdata, is.character))
+      all.numeric <- all(sapply(newdata, is.numeric))
+      if (!all.factors && !all.numeric) stop(paste(
+        'Aggregating model can only make probability predictions if',
+        'new data contains all factors OR all numeric values'
+      ))
+      
+      if (all.factors) p <- apply(newdata, 1, class.to.prob, modelFit$lev)
+      else p <- apply(newdata, 1, prob.to.prob, modelFit$lev)
+      
+      p <- cbind(1-p, p)
+      dimnames(p)[[2]] <- modelFit$obsLevels
+      p
+    },
+    varImp = NULL,
+    predictors = function(x, ...) NULL,
+    levels = function(x) if(any(names(x) == "obsLevels")) x$obsLevels else NULL,
+    sort = NULL
+  )
+}
+
+GetEnsembleQuantileModel <- function(){
+  
+  class.to.prob  <- function(x, lvl) sum(x == lvl[1])/length(x)
+  class.to.class <- function(x, lvl) names(sort(table(x), decreasing=TRUE)[1])
+  prob.to.class  <- function(x, lvl, p) ifelse(quantile(x, p) < .5, lvl[2], lvl[1])
+  prob.to.prob   <- function(x, lvl, p) quantile(x, p)
+  
+  list(
+    label = "Quantile Ensemble Model",
+    library = NULL,
+    loop = NULL,
+    type = c("Classification"),
+    parameters = data.frame(parameter = "quantile", class = "numeric", label = "Quantile"),
+    grid = function(x, y, len = NULL, search = "grid") {
+      if (search == "grid"){
+        data.frame(quantile=seq(0, 1, len=len))
+      } else {
+        data.frame(quantile=runif(len))
+      }
+    },
+    fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+      list(lev=lev, quantile=param$quantile)
+    },
+    predict = function(modelFit, newdata, submodels = NULL) {
+      all.factors <- all(sapply(newdata, is.factor)) || all(sapply(newdata, is.character))
+      all.numeric <- all(sapply(newdata, is.numeric))
+      if (!all.factors && !all.numeric) stop(paste(
+        'Aggregating model only works if training data contains',
+        'all factors OR all numeric values'
+      ))
+      
+      if (all.factors) p <- apply(newdata, 1, class.to.class, modelFit$lev)
+      else p <- apply(newdata, 1, prob.to.class, modelFit$lev, modelFit$quantile)
+      
+      factor(p, levels=modelFit$lev)
+    },
+    prob = function(modelFit, newdata, submodels = NULL) {
+      all.factors <- all(sapply(newdata, is.factor)) || all(sapply(newdata, is.character))
+      all.numeric <- all(sapply(newdata, is.numeric))
+      if (!all.factors && !all.numeric) stop(paste(
+        'Aggregating model can only make probability predictions if',
+        'new data contains all factors OR all numeric values'
+      ))
+      
+      if (all.factors) p <- apply(newdata, 1, class.to.prob, modelFit$lev)
+      else p <- apply(newdata, 1, prob.to.prob, modelFit$lev, modelFit$quantile)
+      
+      p <- cbind(1-p, p)
+      dimnames(p)[[2]] <- modelFit$obsLevels
+      p
+    },
+    varImp = NULL,
+    predictors = function(x, ...) NULL,
+    levels = function(x) if(any(names(x) == "obsLevels")) x$obsLevels else NULL,
+    sort = NULL
+  )
+}
+
+GetCaretEnsembleModel <- function(caret.list.args, caret.stack.args){
+  list(
+    label = "Caret Ensemble Model",
+    library = NULL,
+    loop = NULL,
+    type = c("Classification"),
+    parameters = data.frame(parameter = "parameter", class = "character", label = "parameter"),
+    grid = function(x, y, len = NULL, search = "grid") data.frame(parameter="none"),
+    fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+      train.args <- c(list(x, y), caret.list.args)
+      cl <- do.call('caretList', train.args)
+      
+      train.args <- caret.stack.args
+      train.args$all.models <- cl
+      do.call('caretStack', train.args)
+    },
+    predict = function(modelFit, newdata, submodels = NULL) {
+      predict(modelFit, newdata=newdata, type='raw')
+    },
+    prob = function(modelFit, newdata, submodels = NULL) {
+      predict(modelFit, newdata=newdata, type='prob')
+    },
+    varImp = NULL,
+    predictors = function(x, ...) NULL,
+    levels = function(x) if(any(names(x) == "obsLevels")) x$obsLevels else NULL,
+    sort = NULL
+  )
+}

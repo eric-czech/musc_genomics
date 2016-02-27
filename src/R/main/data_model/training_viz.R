@@ -53,6 +53,8 @@ PlotFoldConfusion <- function(cv.res){
     geom_boxplot(alpha=.5, outlier.size=0, position = 'dodge', width = 0.5) +
     geom_jitter(width = .3, alpha=.5) + 
     facet_wrap(~variable, scales='free') + theme_bw() + 
+    theme(axis.text.x = element_text(angle = 25, hjust = 1)) +
+    scale_colour_discrete(guide = FALSE) +
     xlab('Model') + ylab('Count') + 
     ggtitle('Confusion Matrix Distributions')
 }
@@ -61,9 +63,10 @@ PlotFoldMetric <- function(cv.res, metric){
   GetCVScalarStats(cv.res) %>% 
     rename_(value=metric) %>%
     mutate(model=factor(model)) %>%
-    mutate(model=reorder(model, value)) %>%
+    mutate(model=reorder(model, value, FUN = median)) %>%
     ggplot(aes(x=model, y=value, color=model)) +
     geom_boxplot() + coord_flip() + theme_bw() + ylab(metric) + 
+    scale_colour_discrete(guide = FALSE) +
     ggtitle(sprintf('CV %s Estimates', metric))
 }
 

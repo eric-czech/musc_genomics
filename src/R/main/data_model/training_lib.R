@@ -100,74 +100,65 @@ GetFoldDataGenerator <- function(preproc, y.tresh, linear.only, n.core=8,
     # Apply preprocessing to feature subset
     loginfo('Running preprocessing')
     
-    ## PCA preprocessing
-    #     pp.pca.ge <- preProcess(X.train.all[,c.ge], method=c(preproc, 'pca'), thresh=pca.thresh)
-    #     pp.pca.cn <- preProcess(X.train.all[,c.cn], method=c(preproc, 'pca'), thresh=pca.thresh)
-    #     pred.pca <- function(d, c.sml){ cbind(
-    #       predict(pp.pca.ge, d[,c.ge]) %>% setNames(paste0('ge.', names(.))),
-    #       predict(pp.pca.cn, d[,c.cn]) %>% setNames(paste0('cn.', names(.))),
-    #       d[, c.sml[c.sml %in% c.binary]]
-    #     )}
-    
-    
     ## Standard preprocessing
     pp.lrg <- preProcess(X.train.lrg, method=preproc)
     pp.sml <- preProcess(X.train.sml, method=preproc)
+    
     X.train.lrg <- predict(pp.lrg, X.train.lrg)
     X.train.sml <- predict(pp.sml, X.train.sml)
-    
-    ## PLS preprocessing
-    pp.std.ge <- preProcess(X.train.all[,c.ge], method=c('center', 'scale'))
-    pp.std.cn <- preProcess(X.train.all[,c.cn], method=c('center', 'scale'))
-    
-    X.train.ge <- predict(pp.std.ge, X.train.all[,c.ge])
-    X.train.cn <- predict(pp.std.cn, X.train.all[,c.cn])
-    
-    pp.pls.ge <- plsda(X.train.ge, y.train, ncomp = pls.comp)
-    pp.pls.cn <- plsda(X.train.cn, y.train, ncomp = pls.comp)
-    
-    pred.pls <- function(d, c.sml){ cbind(
-      pls::predict.mvr(pp.pls.ge, d[,c.ge], type = "scores") %>% setNames(paste0('ge.', names(.))),
-      pls::predict.mvr(pp.pls.cn, d[,c.cn], type = "scores") %>% setNames(paste0('cn.', names(.))),
-      d[, c.sml[c.sml %in% c.binary]]
-    )}
-    X.train.pls <- pred.pls(cbind(X.train.ge, X.train.cn), names(X.train.sml))
-    #X.train.pca <- pred.pca(X.train.all, names(X.train.sml))
     
     # X.test may be null if this data preprocessing call is not for resampling iteration
     if (is.null(X.test)){
       X.test.lrg <- NULL
       X.test.sml <- NULL
-      #X.test.pca <- NULL
-      X.test.pls <- NULL
     } else {
       X.test.lrg  <- predict(pp.lrg, X.test[,names(X.train.lrg)])
       X.test.sml  <- predict(pp.sml, X.test[,names(X.train.sml)])
-      #X.test.pca <- pred.pca(X.test, names(X.train.sml))
-      
-      X.test.ge <- predict(pp.std.ge, X.test[,c.ge])
-      X.test.cn <- predict(pp.std.cn, X.test[,c.cn])
-      X.test.pls <- pred.pls(cbind(X.test.ge, X.test.cn), names(X.train.sml))
     }
     
     list(
-      #preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml, pp.pca.ge=pp.pca.ge, pp.pca.cn=pp.pca.cn), 
-      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml, pp.pls.ge=pp.pls.ge, pp.pls.cn=pp.pls.cn), 
-      #preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml),
+      preproc=list(pp.lrg=pp.lrg, pp.sml=pp.sml), 
       X.names=names(X.train.all),
-      X.train.sml=X.train.sml, X.train.lrg=X.train.lrg, X.train.pls=X.train.pls,
-      X.test.sml=X.test.sml, X.test.lrg=X.test.lrg, X.test.pls=X.test.pls,
+      X.train.sml=X.train.sml, X.train.lrg=X.train.lrg,
+      X.test.sml=X.test.sml, X.test.lrg=X.test.lrg,
       y.train=y.train, y.test=y.test,
       y.train.bin=DichotomizeOutcome(y.train, y.tresh), y.test.bin=DichotomizeOutcome(y.test, y.tresh)
     )
   }
 }
 
+# Graveyard for above:
+
+## PCA preprocessing
+#     pp.pca.ge <- preProcess(X.train.all[,c.ge], method=c(preproc, 'pca'), thresh=pca.thresh)
+#     pp.pca.cn <- preProcess(X.train.all[,c.cn], method=c(preproc, 'pca'), thresh=pca.thresh)
+#     pred.pca <- function(d, c.sml){ cbind(
+#       predict(pp.pca.ge, d[,c.ge]) %>% setNames(paste0('ge.', names(.))),
+#       predict(pp.pca.cn, d[,c.cn]) %>% setNames(paste0('cn.', names(.))),
+#       d[, c.sml[c.sml %in% c.binary]]
+#     )}
+
+#     ## PLS preprocessing
+#     pp.std.ge <- preProcess(X.train.all[,c.ge], method=c('center', 'scale'))
+#     pp.std.cn <- preProcess(X.train.all[,c.cn], method=c('center', 'scale'))
+#     
+
+#     
+#     pp.pls.ge <- plsda(X.train.ge, y.train, ncomp = pls.comp)
+#     pp.pls.cn <- plsda(X.train.cn, y.train, ncomp = pls.comp)
+#     
+#     pred.pls <- function(d, c.sml){ cbind(
+#       pls::predict.mvr(pp.pls.ge, d[,c.ge], type = "scores") %>% setNames(paste0('ge.', names(.))),
+#       pls::predict.mvr(pp.pls.cn, d[,c.cn], type = "scores") %>% setNames(paste0('cn.', names(.))),
+#       d[, c.sml[c.sml %in% c.binary]]
+#     )}
+#     X.train.pls <- pred.pls(cbind(X.train.ge, X.train.cn), names(X.train.sml))
+
 CreateFoldIndex <- function(y, index, level){
   if (level == 1) # Outer folds should be returned for training set, not test set
     createMultiFolds(y, k = 10, times = 3)
-  else if (level == 2) # Inner folds should be partioned the same as above
-    createFolds(y[index], k=10, returnTrain = T)
+  else if (level == 2) # Inner folds should have a single partition
+    createDataPartition(y[index], p=.8)  # Previously: createFolds(y[index], k=10, returnTrain = T)
   else
     stop(sprintf('Folds at level %s not supported', level))
 }

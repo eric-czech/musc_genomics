@@ -87,15 +87,12 @@ bin.lrg.models <- list()
 ec <- T
 
 # source('data_model/training_models.R')
-bin.sml.models$svm.radial.sml <- trainer$train(bin.model.svm.radial.sml, enable.cache=ec)
-bin.sml.models$svm.rfe.wt.sml <- trainer$train(bin.model.svm.rfe.wt.sml, enable.cache=ec)
-
-bin.sml.models$svm.linear.sml <- trainer$train(bin.model.svm.linear.sml, enable.cache=ec)
+bin.sml.models$svm.radial <- trainer$train(bin.model.svm.radial.sml, enable.cache=ec)
+bin.sml.models$svm.wt <- trainer$train(bin.model.svm.wt.sml, enable.cache=ec)
+bin.sml.models$svm.linear <- trainer$train(bin.model.svm.linear.sml, enable.cache=ec)
 bin.sml.models$pls <- trainer$train(bin.model.pls.sml, enable.cache=ec)
 bin.sml.models$pam <- trainer$train(bin.model.pam.sml, enable.cache=ec)
 bin.sml.models$knn <- trainer$train(bin.model.knn.sml, enable.cache=ec)
-bin.sml.models$knn.rfe <- trainer$train(bin.model.knn.rfe.sml, enable.cache=ec)
-
 bin.sml.models$rf <- trainer$train(bin.model.rf.sml, enable.cache=ec)
 bin.sml.models$lasso <- trainer$train(bin.model.lasso.sml, enable.cache=ec)
 bin.sml.models$lasso.wt <- trainer$train(bin.model.lasso.wt.sml, enable.cache=ec)
@@ -107,32 +104,15 @@ bin.sml.models$gbm <- trainer$train(bin.model.gbm.sml, enable.cache=ec)
 bin.sml.models$gbm.wt <- trainer$train(bin.model.gbm.wt.sml, enable.cache=ec)
 bin.sml.models$c50.wt <- trainer$train(bin.model.c50.wt.sml, enable.cache=ec)
 bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=ec)
-bin.sml.models$scrda.rfe <- trainer$train(bin.model.scrda.rfe.sml, enable.cache=T)
 bin.sml.models$hdrda <- trainer$train(bin.model.hdrda.sml, enable.cache=ec)
 
-### RFE Tests
-subsets <- c(10, 50, 100, 500)
+bin.sml.models$svm.rfe.wt.sml <- trainer$train(bin.model.svm.rfe.wt.sml, enable.cache=ec)
+bin.sml.models$svm.rfe.sml <- trainer$train(bin.model.svm.rfe.sml, enable.cache=ec)
+#bin.sml.models$knn.rfe <- trainer$train(bin.model.knn.rfe.sml, enable.cache=F)
+bin.sml.models$scrda.rfe <- trainer$train(bin.model.scrda.rfe.sml, enable.cache=T)
+bin.sml.models$hdrda.rfe <- trainer$train(bin.model.hdrda.rfe.sml, enable.cache=ec)
 
-rfectrl <- rfeControl(
-  functions=caretFuncs, method = "cv", number = 10,
-  returnResamp="final", verbose = TRUE
-)
-trainctrl <- trainControl(classProbs= T, method='cv', number=3)
-caretFuncs$summary <- defaultSummary
-set.seed(326) 
-
-registerDoMC(1)
-dt <- trainer$getFoldData()
-rfetest <- rfe(
-  dt[[1]]$data$X.train.sml, dt[[1]]$data$y.train.bin,
-  sizes = subsets,
-  rfeControl=rfectrl, method='svmRadial', metric='Kappa', trControl=trainctrl,
-  tuneLength=3
-)
-
-
-# Under Construction
-
+##### Models Under Construction #####
 
 #bin.sml.models$rda <- trainer$train(bin.model.rda.sml, enable.cache=F)
 #bin.lrg.models$scrda <- trainer$train(bin.model.scrda.lrg, enable.cache=F)
@@ -158,7 +138,6 @@ bin.pca.models$et <- trainer$train(bin.model.et.pca, enable.cache=ec)
 # bin.models$rf <- trainer$train(bin.model.rf)
 # bin.models$gbm <- trainer$train(bin.model.gbm)
 
-
 ##### Alternative Datasets #####
 
 scale <- function(x) (x - mean(x)) / sd(x)
@@ -180,7 +159,6 @@ ShowBestTune(bin.sml.models$scrda)
 params <- bin.sml.models$scrda[[3]]$fit$bestTune
 var.imp <- varImp(bin.sml.models$scrda[[3]]$fit, alpha=params$alpha, delta=params$delta, scale=F)
 table(var.imp$importance)
-
 
 ##### CV Results #####
  
@@ -238,21 +216,22 @@ model.cors %>% group_by(first, second) %>%
 
 ens.models <- list(
   scrda=function(i) bin.sml.models$scrda[[i]]$fit,
-  ridge=function(i) bin.sml.models$ridge[[i]]$fit,
-  svmRadial=function(i) bin.sml.models$svm.radial.sml[[i]]$fit,
-  pam=function(i) bin.sml.models$pam[[i]]$fit,
-  pls=function(i) bin.sml.models$pls[[i]]$fit,
-  gbm=function(i) bin.sml.models$gbm[[i]]$fit
+  hdrda=function(i) bin.sml.models$hdrda[[i]]$fit,
+  lasso=function(i) bin.sml.models$lasso.wt[[i]]$fit,
+  enet=function(i) bin.sml.models$enet.wt[[i]]$fit,
+  svm=function(i) bin.sml.models$svm.wt[[i]]$fit,
+  rf=function(i) bin.sml.models$rf[[i]]$fit
 )
 
-get.ensemble <- function(models, name){
-  GetEnsembleModel(models, name, bin.test,  
-                   bin.predict.ens.sml, method='glm',
-                   metric=bin.tgt.metric, trControl=trainControl(method='cv', savePredictions = 'final'))
-}
+#bin.model.ens.glmnet <- GetGlmnetEnsemble(ens.models, 'bin.ens.glmnet')
 
-bin.model.ens1 <- get.ensemble(ens.models, 'bin.ens1')
-bin.sml.models$bin.model.ens1 <- trainer$train(bin.model.ens1, enable.cache=F)
+bin.model.ens.avg <- GetAvgEnsemble(ens.models, 'bin.ens.avg')
+bin.sml.models$bin.model.ens.avg <- trainer$train(bin.model.ens.avg, enable.cache=F)
+
+bin.model.ens.quant <- GetQuantileEnsemble(ens.models, 'bin.ens.quant')
+bin.sml.models$bin.model.ens.quant <- trainer$train(bin.model.ens.quant, enable.cache=F)
+
+##### Partitioned Ensembles #####
 
 bin.ens.sub1.ge <- bin.model(
   'scrda.ge', 5, bin.train.sml, bin.predict.sml, 
@@ -277,51 +256,45 @@ bin.sml.models$bin.model.part.ens1 <- trainer$train(bin.model.part.ens1, enable.
 ##### Classification Hold Out #####
 
 sml.models <- list(
-  bin.model.scrda.sml, bin.model.rf.sml, bin.model.svm.radial.sml, bin.model.pam.sml, bin.model.pls.sml, 
-  bin.model.knn.sml, bin.model.enet.sml, bin.model.lasso.sml, bin.model.ridge.sml,
-  bin.model.svm.linear.sml, bin.model.gbm.sml
+  bin.model.scrda.sml, 
+  bin.model.hdrda.sml,
+  bin.model.lasso.sml, 
+  bin.model.enet.sml, 
+  bin.model.svm.wt.sml,
+  bin.model.rf.sml
 )
 if (any(sapply(sml.models, is.null))) stop('Some models are null')
+
 # trainer$getCache()$invalidate('holdout_fit')
 ho.sml.fit <- trainer$getCache()$load('holdout_fit', function(){
   trainer$holdout(sml.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, 'holdout_data') 
 })
-
-pca.models <- list(
-  bin.model.rf.pca, bin.model.svm.radial.pca, bin.model.pam.pca, bin.model.pls.pca, 
-  bin.model.knn.pca, bin.model.enet.pca, bin.model.lasso.pca, bin.model.ridge.pca
-)
-pca.models <- list(
-  bin.model.svm.radial.pca
-)
-# trainer$getCache()$invalidate('holdout_pca_fit')
-ho.pca.fit <- trainer$getCache()$load('holdout_pca_fit', function(){
-  trainer$holdout(pca.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, 'holdout_data') 
-})
-
 
 # trainer$getCache()$invalidate('calibration_fit')
 cb.sml.fit <- trainer$getCache()$load('calibration_fit', function(){
   trainer$holdout(sml.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, fold.data.gen, 'calibration_data') 
 })
 
-
+val.fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=6, sml.num.p=.0001, 
+                                      lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pls.comp=500)
 
 ens.models.ho <- lapply(ho.sml.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(ho.sml.fit, function(m) m$model))
-bin.model.ens1.ho <- get.ensemble(ens.models.ho, 'bin.ens1.ho')
-ens.ho.fit <- trainer$holdout(list(bin.model.ens1.ho), d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, 'holdout_data')
+ens.avg.ho.fit <- trainer$holdout(
+  list(GetAvgEnsemble(ens.models.ho, 'bin.ens.avg')), 
+  d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data'
+)
+ens.quant.ho.fit <- trainer$holdout(
+  list(GetQuantileEnsemble(ens.models, 'bin.ens.quant')), 
+  d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data'
+)
 
 ens.models.cb <- lapply(cb.sml.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(cb.sml.fit, function(m) m$model))
 bin.model.ens1.cb <- get.ensemble(ens.models.cb, 'bin.ens1.cb')
-ens.cb.fit <- trainer$holdout(list(bin.model.ens1.cb), d.tr$X, d.tr$y, d.cb$X, d.cb$y, fold.data.gen, 'calibration_data')
+ens.cb.fit <- trainer$holdout(list(bin.model.ens1.cb), d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data')
 
 cb.sml.fit.all <- c(ens.cb.fit, cb.sml.fit)
 
 # ho.data <- bs.data.gen(X.ho, y.ho.bin, X.ho, y.ho.bin)
-
-##### Classification Results ##### 
-
-
 
 
 ## Holdout results
