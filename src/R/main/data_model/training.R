@@ -22,13 +22,16 @@ lib('ROCR')
 lib('plotly')
 SEED <- 1024
 
-# RESPONSE_TYPE <- 'cosmic' 
-# RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
-# RESPONSE_THRESH <- -1 
+RESPONSE_TYPE <- 'cosmic' 
+RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
+RESPONSE_THRESH <- -1 
+SELECTION_THRESH <- .001
 
-RESPONSE_TYPE <- 'ctd' 
-RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
-RESPONSE_THRESH <- -1
+# RESPONSE_TYPE <- 'ctd' 
+# RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
+# RESPONSE_THRESH <- -1
+# SELECTION_THRESH <- .0001
+
 
 PREPROC <- c('zv', 'center', 'scale')
 
@@ -69,7 +72,7 @@ RESULT_CACHE$store('response_data', d.prep[,'response'])
 trainer <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'), 
                    cache.project=RESPONSE_TYPE, seed=SEED)
 trainer$generateFoldIndex(d.tr$y, CreateFoldIndex)
-fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=8, sml.num.p=.0001, 
+fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=8, sml.num.p=SELECTION_THRESH, 
                                       lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pls.comp=500)
 trainer$generateFoldData(d.tr$X, d.tr$y, fold.data.gen, GetDataSummarizer())
 
@@ -79,7 +82,6 @@ trainer$generateFoldData(d.tr$X, d.tr$y, fold.data.gen, GetDataSummarizer())
 bin.sml.models <- list()
 bin.pca.models <- list() 
 bin.lrg.models <- list() 
-
     
 # ShowBestTune(bin.models$gbm)
 
@@ -90,7 +92,7 @@ ec <- T
 bin.sml.models$svm.radial <- trainer$train(bin.model.svm.radial.sml, enable.cache=ec)
 bin.sml.models$svm.wt <- trainer$train(bin.model.svm.wt.sml, enable.cache=ec)
 bin.sml.models$svm.linear <- trainer$train(bin.model.svm.linear.sml, enable.cache=ec)
-bin.sml.models$pls <- trainer$train(bin.model.pls.sml, enable.cache=ec)
+#bin.sml.models$pls <- trainer$train(bin.model.pls.sml, enable.cache=ec)
 bin.sml.models$pam <- trainer$train(bin.model.pam.sml, enable.cache=ec)
 bin.sml.models$knn <- trainer$train(bin.model.knn.sml, enable.cache=ec)
 bin.sml.models$rf <- trainer$train(bin.model.rf.sml, enable.cache=ec)
@@ -105,6 +107,9 @@ bin.sml.models$gbm.wt <- trainer$train(bin.model.gbm.wt.sml, enable.cache=ec)
 bin.sml.models$c50.wt <- trainer$train(bin.model.c50.wt.sml, enable.cache=ec)
 bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=ec)
 bin.sml.models$hdrda <- trainer$train(bin.model.hdrda.sml, enable.cache=ec)
+
+ens.rfe.sizes.fun = function(nrow, ncol){ c(100) }
+bin.sml.models$ens.rfe <- trainer$train(GetRFEEnsemble('ens.rfe', bin.train.sml, ens.rfe.sizes.fun), enable.cache=ec)
 
 bin.sml.models$svm.rfe.wt.sml <- trainer$train(bin.model.svm.rfe.wt.sml, enable.cache=ec)
 bin.sml.models$svm.rfe.sml <- trainer$train(bin.model.svm.rfe.sml, enable.cache=ec)
@@ -214,22 +219,23 @@ model.cors %>% group_by(first, second) %>%
 
 ##### Ensemble Selection #####
 
-ens.models <- list(
-  scrda=function(i) bin.sml.models$scrda[[i]]$fit,
-  hdrda=function(i) bin.sml.models$hdrda[[i]]$fit,
-  lasso=function(i) bin.sml.models$lasso.wt[[i]]$fit,
-  enet=function(i) bin.sml.models$enet.wt[[i]]$fit,
-  svm=function(i) bin.sml.models$svm.wt[[i]]$fit,
-  rf=function(i) bin.sml.models$rf[[i]]$fit
+ens.models.def <- list(
+  bin.model.scrda.sml, 
+  bin.model.hdrda.sml,
+  bin.model.lasso.wt.sml,
+  bin.model.enet.wt.sml,
+  bin.model.svm.wt.sml,
+  bin.model.gbm.sml
 )
+ens.models <- SelectTrainedModels(bin.sml.models, ens.models.def) %>% SelectFits
 
 #bin.model.ens.glmnet <- GetGlmnetEnsemble(ens.models, 'bin.ens.glmnet')
 
 bin.model.ens.avg <- GetAvgEnsemble(ens.models, 'bin.ens.avg')
-bin.sml.models$bin.model.ens.avg <- trainer$train(bin.model.ens.avg, enable.cache=F)
+bin.sml.models$bin.model.ens.avg <- trainer$train(bin.model.ens.avg, enable.cache=ec)
 
 bin.model.ens.quant <- GetQuantileEnsemble(ens.models, 'bin.ens.quant')
-bin.sml.models$bin.model.ens.quant <- trainer$train(bin.model.ens.quant, enable.cache=F)
+bin.sml.models$bin.model.ens.quant <- trainer$train(bin.model.ens.quant, enable.cache=ec)
 
 ##### Partitioned Ensembles #####
 
@@ -258,33 +264,40 @@ bin.sml.models$bin.model.part.ens1 <- trainer$train(bin.model.part.ens1, enable.
 sml.models <- list(
   bin.model.scrda.sml, 
   bin.model.hdrda.sml,
-  bin.model.lasso.sml, 
-  bin.model.enet.sml, 
   bin.model.svm.wt.sml,
-  bin.model.rf.sml
+  bin.model.rf.sml,
+  bin.model.svm.linear.sml,
+  bin.model.pam.sml,
+  bin.model.knn.sml,
+  bin.model.lasso.wt.sml,
+  bin.model.enet.wt.sml,
+  bin.model.ridge.wt.sml,
+  bin.model.c50.wt.sml,
+  bin.model.gbm.sml
 )
 if (any(sapply(sml.models, is.null))) stop('Some models are null')
 
+val.fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=4, sml.num.p=SELECTION_THRESH, 
+                                          lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pls.comp=500)
+
+
 # trainer$getCache()$invalidate('holdout_fit')
 ho.sml.fit <- trainer$getCache()$load('holdout_fit', function(){
-  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, 'holdout_data') 
+  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data') 
 })
 
 # trainer$getCache()$invalidate('calibration_fit')
 cb.sml.fit <- trainer$getCache()$load('calibration_fit', function(){
-  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, fold.data.gen, 'calibration_data') 
+  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data') 
 })
 
-val.fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=6, sml.num.p=.0001, 
-                                      lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pls.comp=500)
-
-ens.models.ho <- lapply(ho.sml.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(ho.sml.fit, function(m) m$model))
+ens.models.ho <- SelectTrainedModels(ho.sml.fit, ens.models.def) %>% SelectFits
 ens.avg.ho.fit <- trainer$holdout(
   list(GetAvgEnsemble(ens.models.ho, 'bin.ens.avg')), 
   d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data'
 )
 ens.quant.ho.fit <- trainer$holdout(
-  list(GetQuantileEnsemble(ens.models, 'bin.ens.quant')), 
+  list(GetQuantileEnsemble(ens.models.ho, 'bin.ens.quant')), 
   d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data'
 )
 
@@ -309,15 +322,15 @@ cal.data %>% group_by(model) %>% do({
     group_by(bin) %>% summarise(pct.pos=sum(y.test == 'pos')/n(), pct.neg=sum(y.test == 'neg')/n(), n=n())
 }) %>% ggplot(aes(x=bin, y=pct.pos)) + geom_bar(stat='identity') + facet_wrap(~model)
 
-
-ho.res <- SummarizeTrainingResults(list(ho.sml.fit), T, fold.summary=NULL, model.summary=ResSummaryFun('pr'))
+ho.sml.all <- c(ho.sml.fit, ens.avg.ho.fit, ens.quant.ho.fit)
+ho.res <- SummarizeTrainingResults(list(ho.sml.all), T, fold.summary=NULL, model.summary=ResSummaryFun('pr'))
 RESULT_CACHE$store('ho_model_perf', ho.res)
 
 
 cb.res <- SummarizeTrainingResults(list(cb.sml.fit.all), T, fold.summary=NULL, model.summary=ResSummaryFun('lift'))
 RESULT_CACHE$store('cb_model_perf', cb.res)
 
-p.res <- cb.res
+p.res <- ho.res
 PlotHoldOutConfusion(p.res)
 PlotHoldOutMetric(p.res, 'auc') 
 PlotHoldOutMetric(p.res, 'acc')

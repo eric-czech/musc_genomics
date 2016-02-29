@@ -196,6 +196,15 @@ GetPartitionedEnsembleModel <- function(name, model.ge, model.cn, model.mu, test
   )
 }
 
+SelectTrainedModels <- function(trained.models, def.models){
+  def.names <- sapply(def.models, function(m) m$name)
+  train.names <- unname(sapply(trained.models, function(m) m[[1]]$model))
+  trained.models[which(train.names %in% def.names)]
+}
+SelectFits <- function(models){
+  lapply(models, function(m) function(i) m[[i]]$fit) %>% setNames(names(models))
+}
+
 ##### Ensemble Models #####
 
 GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, trControl=NULL, ...){
@@ -217,7 +226,8 @@ GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, trCo
       a$method <- method
       a$all.models <- m
       do.call(function(...) { caretStack(...)}, rev(a))
-    }, predict=function(fit, d, i){ 
+    }, predict=function(fit, d, i){
+      browser()
       pred.fun(fit, d, i)
     }
   )
@@ -243,12 +253,6 @@ GetQuantileEnsemble <- function(models, name){
 }
 
 
-# bin.model.ens.rfe <- bin.rfe.model(
-#   'ens.rfe', 5, bin.train.sml, bin.predict.rfe.sml, 
-#   sizes.fun = function(nrow, ncol){ c(50, 75, 100, 150, 200, 250, 300, 350, 500)},
-#   
-# )
-
 bin.model.scrda.rfe.sml <- bin.rfe.model(
   'scrda.rfe', 8, bin.train.sml, bin.predict.rfe.sml, sizes.fun = test.rfe.size.fun,
   method=GetSCRDAModel(8, var.imp=F), tuneLength=8, preProcess='zv'
@@ -257,6 +261,61 @@ bin.model.scrda.rfe.sml <- bin.rfe.model(
 ##### RFE Models #####
 
 
+GetRFEEnsemble <- function(name, train.fun, sizes.fun){
+  list(
+    name=name, test=bin.test, 
+    train=function(d, idx, i, ...){
+      registerDoMC(3)
+      
+      sizes = sizes.fun(nrow(train.fun(d)), ncol(train.fun(d)))
+      weights <- bin.weights(d$y.train.bin)
+      
+      hdrda.grid <- expand.grid(lambda=seq(0, 1, len = 6), gamma=seq(0, 1, len = 8), shrinkage='convex', stringsAsFactors=F)
+      
+      caret.list.args <- list(
+        metric=bin.tgt.metric,
+        tuneList=list(
+          #scrda=caretModelSpec(method=GetSCRDAModel(10), preProcess='zv', tuneLength=15),
+          #hdrda=caretModelSpec(method=GetHDRDAModel(), preProcess='zv', tuneGrid=hdrda.grid),
+          enet=caretModelSpec(method='glmnet', preProcess='zv', tuneLength=15)
+          #svm=caretModelSpec(method='svmRadialWeights', preProcess='zv', tuneLength=10),
+          #gbm=caretModelSpec(method='gbm', preProcess='zv', tuneLength=8, bag.fraction=.5, verbose=F)
+        ),
+        trControl=trainControl(
+          method='cv', number=5, 
+          summaryFunction=ClassSummary, returnData=F,
+          savePredictions='final', classProbs=T, allowParallel=T
+        )
+      )
+      caret.stack.args <- list(
+        method=do.call('GetEnsembleAveragingModel', ENS_AVG_DEFAULT_CONVERTERS),
+        metric=bin.tgt.metric,
+        trControl=trainControl(
+          method='none', savePredictions = 'final', 
+          classProbs=T, summaryFunction=ClassSummary,
+          returnData=T, allowParallel=T
+        )
+      )
+      rfectrl <- rfeControl(
+        functions=caretFuncs, index=idx, 
+        saveDetails=T, returnResamp='final', 
+        verbose=T, allowParallel=F
+      )
+      
+      ens.model <- GetCaretEnsembleModel(caret.list.args, caret.stack.args)
+      registerDoMC(1)
+      browser()
+      rfe(
+        train.fun(d), d$y.train.bin, method=ens.model,
+        rfeControl=rfectrl, metric=bin.tgt.metric, 
+        weights=weights, sizes=sizes
+      )
+    }, predict=function(fit, d, i){ 
+      browser()
+      pred.fun(fit, d, i)
+    }
+  )
+}
 
 ##### Classification Models #####
 
@@ -302,7 +361,7 @@ hdrda.grid <- rbind(
   expand.grid(lambda=seq(0, 1, len = 6), gamma=seq(0, 1, len = 8), shrinkage='convex', stringsAsFactors=F)
 )
 bin.model.hdrda.sml <- bin.model(
-  'hdrda.sml', 10, bin.train.sml, bin.predict.sml, 
+  'hdrda.sml', 6, bin.train.sml, bin.predict.sml, 
   method=GetHDRDAModel(), preProcess='zv', tuneGrid=hdrda.grid#tuneLength=10
 )
 bin.model.hdrda.lrg <- bin.model(
@@ -342,7 +401,7 @@ bin.model.svm.radial.sml <- bin.model(
   method='svmRadial', preProcess='zv', tuneLength=25
 )
 bin.model.svm.wt.sml <- bin.model(
-  'svm.wt.sml', 6, bin.train.sml, bin.predict.sml,
+  'svm.wt.sml', 4, bin.train.sml, bin.predict.sml,
   method='svmRadialWeights', preProcess='zv', tuneLength=10
 )
 bin.model.svm.radial.pca <- bin.model(

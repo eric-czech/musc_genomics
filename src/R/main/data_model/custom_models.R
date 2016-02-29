@@ -15,6 +15,7 @@ GetDataSubsetModel <- function(caretModel, subset.selector){
 
 GetHDRDAModel <- function(){
   list(
+    method="hdrda",
     label = "High Dimensional Regularized Discriminant Analysis",
     library = "sparsediscrim",
     loop = NULL,
@@ -117,6 +118,7 @@ GetSCRDAModel <- function(max.delta=3, var.imp=T){
     }
   }
   m <- list(
+    method="scrda",
     label = "SCRDA",
     library = c("rda"),
     type = "Classification",
@@ -253,7 +255,7 @@ GetEnsembleAveragingModel <- function(
       if (all.factors) p <- apply(newdata, 1, class.to.prob, modelFit$lev)
       else p <- apply(newdata, 1, prob.to.prob, modelFit$lev)
       
-      p <- cbind(1-p, p)
+      p <- cbind(p, 1-p)
       dimnames(p)[[2]] <- modelFit$obsLevels
       p
     },
@@ -311,7 +313,7 @@ GetEnsembleQuantileModel <- function(){
       if (all.factors) p <- apply(newdata, 1, class.to.prob, modelFit$lev)
       else p <- apply(newdata, 1, prob.to.prob, modelFit$lev, modelFit$quantile)
       
-      p <- cbind(1-p, p)
+      p <- cbind(p, 1-p)
       dimnames(p)[[2]] <- modelFit$obsLevels
       p
     },
@@ -331,7 +333,8 @@ GetCaretEnsembleModel <- function(caret.list.args, caret.stack.args){
     parameters = data.frame(parameter = "parameter", class = "character", label = "parameter"),
     grid = function(x, y, len = NULL, search = "grid") data.frame(parameter="none"),
     fit = function(x, y, wts, param, lev, last, classProbs, ...) {
-      train.args <- c(list(x, y), caret.list.args)
+      browser()
+      train.args <- c(list(x=x, y=y), caret.list.args)
       cl <- do.call('caretList', train.args)
       
       train.args <- caret.stack.args
