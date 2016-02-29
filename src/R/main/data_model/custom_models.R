@@ -339,13 +339,51 @@ GetCaretEnsembleModel <- function(caret.list.args, caret.stack.args){
       
       train.args <- caret.stack.args
       train.args$all.models <- cl
-      do.call('caretStack', train.args)
+      cs <- do.call('caretStack', train.args)
+      # attach things
+      cs
     },
     predict = function(modelFit, newdata, submodels = NULL) {
       predict(modelFit, newdata=newdata, type='raw')
     },
     prob = function(modelFit, newdata, submodels = NULL) {
-      predict(modelFit, newdata=newdata, type='prob')
+      p <- predict(modelFit, newdata=newdata, type='prob')
+      p <- cbind(p, 1-p)
+      dimnames(p)[[2]] <- modelFit$obsLevels
+      p
+    },
+    varImp = NULL,
+    predictors = function(x, ...) NULL,
+    levels = function(x) if(any(names(x) == "obsLevels")) x$obsLevels else NULL,
+    sort = NULL
+  )
+}
+
+GetCaretEnsembleModelFunctional <- function(caret.list.args.fun, caret.stack.args.fun){
+  list(
+    label = "Caret Ensemble Model",
+    library = NULL,
+    loop = NULL,
+    type = c("Classification"),
+    parameters = data.frame(parameter = "parameter", class = "character", label = "parameter"),
+    grid = function(x, y, len = NULL, search = "grid") data.frame(parameter="none"),
+    fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+      caret.list.args <- caret.list.args.fun(x, y, wts, param, lev, last, classProbs, ...)
+      cl <- do.call('caretList', caret.list.args)
+      
+      caret.stack.args <- caret.stack.args.fun(x, y, wts, param, lev, last, classProbs, ...)
+      caret.stack.args$all.models <- cl
+      cs <- do.call('caretStack', caret.stack.args)
+      cs
+    },
+    predict = function(modelFit, newdata, submodels = NULL) {
+      predict(modelFit, newdata=newdata, type='raw')
+    },
+    prob = function(modelFit, newdata, submodels = NULL) {
+      p <- predict(modelFit, newdata=newdata, type='prob')
+      p <- cbind(p, 1-p)
+      dimnames(p)[[2]] <- modelFit$obsLevels
+      p
     },
     varImp = NULL,
     predictors = function(x, ...) NULL,

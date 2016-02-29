@@ -40,6 +40,11 @@ select <- dplyr::select
 
 d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
 
+# Training data exports:
+# d.prep %>% mutate(response.class=DichotomizeOutcome(response, threshold = RESPONSE_THRESH)) %>%
+#   select(tumor_id, response, response.class, everything()) %>%
+#   write.csv(file=sprintf('/tmp/musc_genomics_data_%s.csv', RESPONSE_TYPE), row.names=F)
+
 ## Create training, holdout, and calibration datasets
 set.seed(SEED)
 idx.tr <- createDataPartition(d.prep[,'response'], p=(1/2))[[1]]
@@ -108,9 +113,12 @@ bin.sml.models$c50.wt <- trainer$train(bin.model.c50.wt.sml, enable.cache=ec)
 bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=ec)
 bin.sml.models$hdrda <- trainer$train(bin.model.hdrda.sml, enable.cache=ec)
 
-ens.rfe.sizes.fun = function(nrow, ncol){ c(100) }
-bin.sml.models$ens.rfe <- trainer$train(GetRFEEnsemble('ens.rfe', bin.train.sml, ens.rfe.sizes.fun), enable.cache=ec)
+ens.rfe.sizes.fun = function(nrow, ncol){ c(50, 100, 150, 200, 300, 500) }
+bin.model.ens.rfe <- GetRFEEnsemble('ens.rfe', bin.train.sml, ens.rfe.sizes.fun)
+bin.sml.models$ens.rfe <- trainer$train(bin.model.ens.rfe, enable.cache=T)
 
+
+## Ignore for now
 bin.sml.models$svm.rfe.wt.sml <- trainer$train(bin.model.svm.rfe.wt.sml, enable.cache=ec)
 bin.sml.models$svm.rfe.sml <- trainer$train(bin.model.svm.rfe.sml, enable.cache=ec)
 #bin.sml.models$knn.rfe <- trainer$train(bin.model.knn.rfe.sml, enable.cache=F)
@@ -259,9 +267,10 @@ bin.model.part.ens1 <- GetPartitionedEnsembleModel(
   method='glm')
 bin.sml.models$bin.model.part.ens1 <- trainer$train(bin.model.part.ens1, enable.cache=F)
 
-##### Classification Hold Out #####
+##### Classification Hold Outs #####
 
 sml.models <- list(
+  bin.model.ens.rfe,
   bin.model.scrda.sml, 
   bin.model.hdrda.sml,
   bin.model.svm.wt.sml,
@@ -277,18 +286,12 @@ sml.models <- list(
 )
 if (any(sapply(sml.models, is.null))) stop('Some models are null')
 
-val.fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=4, sml.num.p=SELECTION_THRESH, 
+val.fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=2, sml.num.p=SELECTION_THRESH, 
                                           lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pls.comp=500)
-
 
 # trainer$getCache()$invalidate('holdout_fit')
 ho.sml.fit <- trainer$getCache()$load('holdout_fit', function(){
   trainer$holdout(sml.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data') 
-})
-
-# trainer$getCache()$invalidate('calibration_fit')
-cb.sml.fit <- trainer$getCache()$load('calibration_fit', function(){
-  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data') 
 })
 
 ens.models.ho <- SelectTrainedModels(ho.sml.fit, ens.models.def) %>% SelectFits
@@ -301,9 +304,22 @@ ens.quant.ho.fit <- trainer$holdout(
   d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data'
 )
 
-ens.models.cb <- lapply(cb.sml.fit, function(m) {function(i) m$fit}) %>% setNames(sapply(cb.sml.fit, function(m) m$model))
-bin.model.ens1.cb <- get.ensemble(ens.models.cb, 'bin.ens1.cb')
-ens.cb.fit <- trainer$holdout(list(bin.model.ens1.cb), d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data')
+### Calibration Fitting 
+
+# trainer$getCache()$invalidate('calibration_fit')
+cb.sml.fit <- trainer$getCache()$load('calibration_fit', function(){
+  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data') 
+})
+
+ens.models.cb <- SelectTrainedModels(cb.sml.fit, ens.models.def) %>% SelectFits
+ens.avg.cb.fit <- trainer$holdout(
+  list(GetAvgEnsemble(ens.models.cb, 'bin.ens.avg')), 
+  d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data'
+)
+ens.quant.cb.fit <- trainer$holdout(
+  list(GetQuantileEnsemble(ens.models.cb, 'bin.ens.quant')), 
+  d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data'
+)
 
 cb.sml.fit.all <- c(ens.cb.fit, cb.sml.fit)
 

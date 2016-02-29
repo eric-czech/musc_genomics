@@ -260,59 +260,85 @@ bin.model.scrda.rfe.sml <- bin.rfe.model(
 
 ##### RFE Models #####
 
-
+rfeFuncs <- caretFuncs
+rfeFuncs$fit <- function (x, y, first, last, ...) {
+  train(x, y, ...)
+}
+rfeFuncs$rank <- function (object, x, y) {
+  vimp <- varImp(object, scale = FALSE)$importance
+  if (object$modelType == "Regression") {
+    vimp <- vimp[order(vimp[, 1], decreasing = TRUE), , drop = FALSE]
+  }
+  else {
+    if (all(levels(y) %in% colnames(vimp))) {
+      avImp <- apply(vimp[, levels(y), drop = TRUE], 1, 
+                     mean)
+      vimp$Overall <- avImp
+    }
+  }
+  vimp$var <- rownames(vimp)
+  vimp
+}
 GetRFEEnsemble <- function(name, train.fun, sizes.fun){
   list(
     name=name, test=bin.test, 
     train=function(d, idx, i, ...){
-      registerDoMC(3)
+      registerDoMC(5)
       
       sizes = sizes.fun(nrow(train.fun(d)), ncol(train.fun(d)))
-      weights <- bin.weights(d$y.train.bin)
       
-      hdrda.grid <- expand.grid(lambda=seq(0, 1, len = 6), gamma=seq(0, 1, len = 8), shrinkage='convex', stringsAsFactors=F)
-      
-      caret.list.args <- list(
-        metric=bin.tgt.metric,
-        tuneList=list(
-          #scrda=caretModelSpec(method=GetSCRDAModel(10), preProcess='zv', tuneLength=15),
-          #hdrda=caretModelSpec(method=GetHDRDAModel(), preProcess='zv', tuneGrid=hdrda.grid),
-          enet=caretModelSpec(method='glmnet', preProcess='zv', tuneLength=15)
-          #svm=caretModelSpec(method='svmRadialWeights', preProcess='zv', tuneLength=10),
-          #gbm=caretModelSpec(method='gbm', preProcess='zv', tuneLength=8, bag.fraction=.5, verbose=F)
-        ),
-        trControl=trainControl(
-          method='cv', number=5, 
-          summaryFunction=ClassSummary, returnData=F,
-          savePredictions='final', classProbs=T, allowParallel=T
+      caret.list.args.fun <- function(x, y, wts, param, lev, last, classProbs, ...){
+        weights <- bin.weights(y)
+        hdrda.grid <- expand.grid(lambda=seq(0, 1, len = 6), gamma=seq(0, 1, len = 8), shrinkage='convex', stringsAsFactors=F)
+        list(
+          x=x, y=y,
+          metric=bin.tgt.metric,
+          tuneList=list(
+            #scrda=caretModelSpec(method=GetSCRDAModel(10), preProcess='zv', tuneLength=15),
+            hdrda=caretModelSpec(method=GetHDRDAModel(), preProcess='zv', tuneGrid=hdrda.grid),
+            glmnet=caretModelSpec(method='glmnet', preProcess='zv', tuneLength=5, weights=weights),
+            svm=caretModelSpec(method='svmRadialWeights', preProcess='zv', tuneLength=10),
+            gbm=caretModelSpec(method='gbm', preProcess='zv', tuneLength=6, bag.fraction=.5, verbose=F)
+          ),
+          trControl=trainControl(
+            method='cv', number=3, 
+            summaryFunction=ClassSummary, returnData=F,
+            savePredictions='final', classProbs=T, allowParallel=T
+          )
         )
-      )
-      caret.stack.args <- list(
-        method=do.call('GetEnsembleAveragingModel', ENS_AVG_DEFAULT_CONVERTERS),
-        metric=bin.tgt.metric,
-        trControl=trainControl(
-          method='none', savePredictions = 'final', 
-          classProbs=T, summaryFunction=ClassSummary,
-          returnData=T, allowParallel=T
+      }
+      caret.stack.args.fun <- function(x, y, wts, param, lev, last, classProbs, ...){
+        list(
+          method=do.call('GetEnsembleAveragingModel', ENS_AVG_DEFAULT_CONVERTERS),
+          metric=bin.tgt.metric,
+          trControl=trainControl(
+            method='none', number=1, savePredictions = 'final', 
+            classProbs=T, summaryFunction=ClassSummary,
+            returnData=T, allowParallel=T
+          )
         )
-      )
+      }
       rfectrl <- rfeControl(
-        functions=caretFuncs, index=idx, 
+        functions=rfeFuncs, index=idx,  
         saveDetails=T, returnResamp='final', 
         verbose=T, allowParallel=F
       )
       
-      ens.model <- GetCaretEnsembleModel(caret.list.args, caret.stack.args)
-      registerDoMC(1)
-      browser()
+      # This is the trControl that will be used to train CaretEnsemble method
+      model.trctrl=trainControl(
+        method='none', number=1, 
+        summaryFunction=ClassSummary, returnData=T, verboseIter=T,
+        savePredictions='final', classProbs=T, allowParallel=T
+      )
+      
+      ens.model <- GetCaretEnsembleModelFunctional(caret.list.args.fun, caret.stack.args.fun)
       rfe(
         train.fun(d), d$y.train.bin, method=ens.model,
         rfeControl=rfectrl, metric=bin.tgt.metric, 
-        weights=weights, sizes=sizes
+        sizes=sizes, trControl=model.trctrl
       )
     }, predict=function(fit, d, i){ 
-      browser()
-      pred.fun(fit, d, i)
+      bin.predict.rfe.sml(fit, d, i)
     }
   )
 }
