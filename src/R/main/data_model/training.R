@@ -240,10 +240,10 @@ ens.models <- SelectTrainedModels(bin.sml.models, ens.models.def) %>% SelectFits
 #bin.model.ens.glmnet <- GetGlmnetEnsemble(ens.models, 'bin.ens.glmnet')
 
 bin.model.ens.avg <- GetAvgEnsemble(ens.models, 'bin.ens.avg')
-bin.sml.models$bin.model.ens.avg <- trainer$train(bin.model.ens.avg, enable.cache=F)
+bin.sml.models$bin.model.ens.avg <- trainer$train(bin.model.ens.avg, enable.cache=T)
 
 bin.model.ens.quant <- GetQuantileEnsemble(ens.models, 'bin.ens.quant')
-bin.sml.models$bin.model.ens.quant <- trainer$train(bin.model.ens.quant, enable.cache=F)
+bin.sml.models$bin.model.ens.quant <- trainer$train(bin.model.ens.quant, enable.cache=T)
 
 ##### Partitioned Ensembles #####
 
