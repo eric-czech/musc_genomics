@@ -77,7 +77,7 @@ RESULT_CACHE$store('response_data', d.prep[,'response'])
 trainer <- Trainer(cache.dir=file.path(CACHE_DIR, 'training_data'), 
                    cache.project=RESPONSE_TYPE, seed=SEED)
 trainer$generateFoldIndex(d.tr$y, CreateFoldIndex)
-fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=8, sml.num.p=SELECTION_THRESH, 
+fold.data.gen <- GetFoldDataGenerator(PREPROC, RESPONSE_THRESH, F, n.core=2, sml.num.p=SELECTION_THRESH, 
                                       lrg.num.p=.01, sml.bin.p=.1, lrg.bin.p=.15, pls.comp=500)
 trainer$generateFoldData(d.tr$X, d.tr$y, fold.data.gen, GetDataSummarizer())
 
@@ -122,7 +122,7 @@ bin.sml.models$ens.rfe <- trainer$train(bin.model.ens.rfe, enable.cache=T)
 bin.sml.models$svm.rfe.wt.sml <- trainer$train(bin.model.svm.rfe.wt.sml, enable.cache=ec)
 bin.sml.models$svm.rfe.sml <- trainer$train(bin.model.svm.rfe.sml, enable.cache=ec)
 #bin.sml.models$knn.rfe <- trainer$train(bin.model.knn.rfe.sml, enable.cache=F)
-bin.sml.models$scrda.rfe <- trainer$train(bin.model.scrda.rfe.sml, enable.cache=T)
+bin.sml.models$scrda.rfe <- trainer$train(bin.model.scrda.rfe.sml, enable.cache=ec)
 bin.sml.models$hdrda.rfe <- trainer$train(bin.model.hdrda.rfe.sml, enable.cache=ec)
 
 ##### Models Under Construction #####
@@ -240,10 +240,10 @@ ens.models <- SelectTrainedModels(bin.sml.models, ens.models.def) %>% SelectFits
 #bin.model.ens.glmnet <- GetGlmnetEnsemble(ens.models, 'bin.ens.glmnet')
 
 bin.model.ens.avg <- GetAvgEnsemble(ens.models, 'bin.ens.avg')
-bin.sml.models$bin.model.ens.avg <- trainer$train(bin.model.ens.avg, enable.cache=ec)
+bin.sml.models$bin.model.ens.avg <- trainer$train(bin.model.ens.avg, enable.cache=F)
 
 bin.model.ens.quant <- GetQuantileEnsemble(ens.models, 'bin.ens.quant')
-bin.sml.models$bin.model.ens.quant <- trainer$train(bin.model.ens.quant, enable.cache=ec)
+bin.sml.models$bin.model.ens.quant <- trainer$train(bin.model.ens.quant, enable.cache=F)
 
 ##### Partitioned Ensembles #####
 
@@ -270,7 +270,7 @@ bin.sml.models$bin.model.part.ens1 <- trainer$train(bin.model.part.ens1, enable.
 ##### Classification Hold Outs #####
 
 sml.models <- list(
-  bin.model.ens.rfe,
+  #bin.model.ens.rfe,
   bin.model.scrda.sml, 
   bin.model.hdrda.sml,
   bin.model.svm.wt.sml,
@@ -294,7 +294,8 @@ ho.sml.fit <- trainer$getCache()$load('holdout_fit', function(){
   trainer$holdout(sml.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data') 
 })
 
-ens.models.ho <- SelectTrainedModels(ho.sml.fit, ens.models.def) %>% SelectFits
+
+ens.models.ho <- SelectTrainedModels(ho.sml.fit, ens.models.def) %>% SelectFits(use.index=F)
 ens.avg.ho.fit <- trainer$holdout(
   list(GetAvgEnsemble(ens.models.ho, 'bin.ens.avg')), 
   d.tr$X, d.tr$y, d.ho$X, d.ho$y, val.fold.data.gen, 'holdout_data'
@@ -306,12 +307,15 @@ ens.quant.ho.fit <- trainer$holdout(
 
 ### Calibration Fitting 
 
+#cb.models <- sml.models
+cb.models <- ens.models.def
+
 # trainer$getCache()$invalidate('calibration_fit')
 cb.sml.fit <- trainer$getCache()$load('calibration_fit', function(){
-  trainer$holdout(sml.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data') 
+  trainer$holdout(cb.models, d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data') 
 })
 
-ens.models.cb <- SelectTrainedModels(cb.sml.fit, ens.models.def) %>% SelectFits
+ens.models.cb <- SelectTrainedModels(cb.sml.fit, ens.models.def) %>% SelectFits(use.index=F)
 ens.avg.cb.fit <- trainer$holdout(
   list(GetAvgEnsemble(ens.models.cb, 'bin.ens.avg')), 
   d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data'
@@ -321,12 +325,8 @@ ens.quant.cb.fit <- trainer$holdout(
   d.tr$X, d.tr$y, d.cb$X, d.cb$y, val.fold.data.gen, 'calibration_data'
 )
 
-cb.sml.fit.all <- c(ens.cb.fit, cb.sml.fit)
 
-# ho.data <- bs.data.gen(X.ho, y.ho.bin, X.ho, y.ho.bin)
-
-
-## Holdout results
+##### Calibration & Holdout Analysis #####
 
 # Calibration checks
 cal.data <- cv.res$predictions
@@ -342,8 +342,8 @@ ho.sml.all <- c(ho.sml.fit, ens.avg.ho.fit, ens.quant.ho.fit)
 ho.res <- SummarizeTrainingResults(list(ho.sml.all), T, fold.summary=NULL, model.summary=ResSummaryFun('pr'))
 RESULT_CACHE$store('ho_model_perf', ho.res)
 
-
-cb.res <- SummarizeTrainingResults(list(cb.sml.fit.all), T, fold.summary=NULL, model.summary=ResSummaryFun('lift'))
+cb.sml.all <- c(cb.sml.fit, ens.avg.cb.fit, ens.quant.cb.fit)
+cb.res <- SummarizeTrainingResults(list(cb.sml.all), T, fold.summary=NULL, model.summary=ResSummaryFun('pr'))
 RESULT_CACHE$store('cb_model_perf', cb.res)
 
 p.res <- ho.res
@@ -361,7 +361,7 @@ PlotHoldOutLift(p.res)
 
 # Calibration via selection
 
-cb.acc <- foreach(fold=cb.sml.fit.all, .combine=rbind) %do% {
+cb.acc <- foreach(fold=cb.sml.all, .combine=rbind) %do% {
   p.max <- .9; p.min <- .1; p.inc <- .1
   y.prob <- fold$y.pred$prob
   
@@ -403,6 +403,77 @@ cb.score %>% na.omit %>% ungroup %>%
   mutate(lo=round(lo, 4), hi=round(hi, 4)) %>%
   ggplot(aes(x=factor(lo), y=factor(hi), fill=value)) + 
   geom_tile() + facet_wrap(~model, scales='free')
+
+##### Rectified Predictions #####
+
+get.rectified.accuracy <- function(
+  y.pred, y.test, 
+  p.lo.seq=seq(.025, .5, by=.025), 
+  p.hi.seq=seq(.5, .975, by=.025)){
+  
+  foreach(p.lo=p.lo.seq, .combine=rbind) %:%
+    foreach(p.hi=p.hi.seq, .combine=rbind) %do%{
+      p.rec <- factor(sapply(y.pred, function(p){
+        if (p <= p.lo) 'neg'
+        else if (p >= p.hi) 'pos'
+        else 'na'
+      }))
+      n.na <- sum(p.rec == 'na')
+      n.pos <- sum(p.rec == 'pos')
+      n.neg <- sum(p.rec == 'neg')
+      acc.pos <- sum(p.rec == 'pos' & y.test == 'pos')/n.pos
+      acc.neg <- sum(p.rec == 'neg' & y.test == 'neg')/n.neg
+      acc.all <- sum(p.rec == 'pos' & y.test == 'pos') + sum(p.rec == 'neg' & y.test == 'neg')
+      acc.all <- acc.all / (n.pos + n.neg)
+      data.frame(
+        n=length(p.rec), n.na=n.na, n.pos=n.pos, n.neg=n.neg, 
+        acc.pos=acc.pos, acc.neg=acc.neg, acc.all=acc.all,
+        p.lo=p.lo, p.hi=p.hi
+      )
+    }
+}
+
+cb.acc.rec <- get.rectified.accuracy(ens.avg.cb.fit[[1]]$y.pred$prob, ens.avg.cb.fit[[1]]$y.test)
+cb.acc.rec.ref <- cb.acc.rec %>% na.omit %>%
+  filter(n.pos >= 3 & n.neg >= 3) %>%
+  group_by(acc.pos) %>% do({
+    d <- .
+    head(arrange(d, p.hi, desc(p.lo)), 5)
+  }) %>% ungroup %>% arrange(desc(acc.pos)) %>% 
+  head(50) %>% data.frame
+RESULT_CACHE$store('cb_acc_rec', cb.acc.rec.ref)
+
+ho.acc.rec <- get.rectified.accuracy(
+  ens.avg.ho.fit[[1]]$y.pred$prob, ens.avg.ho.fit[[1]]$y.test,
+  p.lo.seq=.4, p.hi.seq=.6
+)
+RESULT_CACHE$store('ho_acc_rec', ho.acc.rec)
+
+##### Simple Classification Models #####
+
+
+
+registerDoMC(1)
+GetXGBFilter <- function(limit){
+  model.args <- list(
+    method='xgbTree',
+    metric='Kappa', 
+    preProcess=c('zv', 'center', 'scale'),
+    tuneLength=8,
+    trControl=trainControl(
+      method='cv', number=10, classProbs=T, 
+      returnData=T, savePredictions='final',
+      allowParallel=T, verboseIter=T
+    )
+  )
+  GetLimitFilter(SEED, limit, model.args)
+}
+bin.model.xgb.sbf <- GetXGBFilter(50)
+sbfctrl <- sbfControl(
+  functions=bin.model.xgb.sbf, method='repeatedcv', number=10, times=3, 
+  saveDetails=T, verbose=T, allowParallel=F)
+
+res.xgb <- sbf(d.tr$X, d.tr$y.bin, sbfControl = sbfctrl)
 
 ##### Regression Models #####
 

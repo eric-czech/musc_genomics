@@ -198,11 +198,13 @@ GetPartitionedEnsembleModel <- function(name, model.ge, model.cn, model.mu, test
 
 SelectTrainedModels <- function(trained.models, def.models){
   def.names <- sapply(def.models, function(m) m$name)
-  train.names <- unname(sapply(trained.models, function(m) m[[1]]$model))
+  train.names <- unname(sapply(trained.models, function(m) {
+    if (is.null(m$model)) m[[1]]$model else m$model
+  }))
   trained.models[which(train.names %in% def.names)]
 }
-SelectFits <- function(models){
-  lapply(models, function(m) function(i) m[[i]]$fit) %>% setNames(names(models))
+SelectFits <- function(models, use.index=T){
+  lapply(models, function(m) function(i) if (use.index) m[[i]]$fit else m$fit) %>% setNames(names(models))
 }
 
 ##### Ensemble Models #####
@@ -227,7 +229,6 @@ GetEnsembleModel <- function(models, name, test.selector, pred.fun, method, trCo
       a$all.models <- m
       do.call(function(...) { caretStack(...)}, rev(a))
     }, predict=function(fit, d, i){
-      browser()
       pred.fun(fit, d, i)
     }
   )
@@ -319,7 +320,8 @@ GetRFEEnsemble <- function(name, train.fun, sizes.fun){
         )
       }
       rfectrl <- rfeControl(
-        functions=rfeFuncs, index=idx,  
+        functions=rfeFuncs, index=idx, 
+        method='cv', number=3, # Default to 3-fold CV if no index present
         saveDetails=T, returnResamp='final', 
         verbose=T, allowParallel=F
       )
@@ -348,12 +350,12 @@ GetRFEEnsemble <- function(name, train.fun, sizes.fun){
 
 ### ENET ###
 alpha.grid <- c(.001, seq(.1, .9, length.out=13), .999)
-bin.model.lasso.sml <- GetElasticNetModel('lasso.sml', 1, 1, 5, bin.train.sml, bin.predict.sml)
-bin.model.lasso.wt.sml <- GetElasticNetModel('lasso.wt.sml', 1, 1, 5, bin.train.sml, bin.predict.sml, bin.weights)
-bin.model.ridge.sml <- GetElasticNetModel('ridge.sml', 0, 0, 5, bin.train.sml, bin.predict.sml)
-bin.model.ridge.wt.sml <- GetElasticNetModel('ridge.wt.sml', 0, 0, 5, bin.train.sml, bin.predict.sml, bin.weights)
-bin.model.enet.sml <- GetElasticNetModel('enet.sml', .5, alpha.grid, 5, bin.train.sml, bin.predict.sml)
-bin.model.enet.wt.sml <- GetElasticNetModel('enet.wt.sml', .5, alpha.grid, 5, bin.train.sml, bin.predict.sml, bin.weights)
+bin.model.lasso.sml <- GetElasticNetModel('lasso.sml', 1, 1, 3, bin.train.sml, bin.predict.sml)
+bin.model.lasso.wt.sml <- GetElasticNetModel('lasso.wt.sml', 1, 1, 3, bin.train.sml, bin.predict.sml, bin.weights)
+bin.model.ridge.sml <- GetElasticNetModel('ridge.sml', 0, 0, 3, bin.train.sml, bin.predict.sml)
+bin.model.ridge.wt.sml <- GetElasticNetModel('ridge.wt.sml', 0, 0, 3, bin.train.sml, bin.predict.sml, bin.weights)
+bin.model.enet.sml <- GetElasticNetModel('enet.sml', .5, alpha.grid, 3, bin.train.sml, bin.predict.sml)
+bin.model.enet.wt.sml <- GetElasticNetModel('enet.wt.sml', .5, alpha.grid, 3, bin.train.sml, bin.predict.sml, bin.weights)
 
 bin.model.lasso.pca <- GetElasticNetModel('lasso.pca', 1, 1, 5, bin.train.pca, bin.predict.pca)
 bin.model.ridge.pca <- GetElasticNetModel('ridge.pca', 0, 0, 5, bin.train.pca, bin.predict.pca)
@@ -361,7 +363,7 @@ bin.model.enet.pca <- GetElasticNetModel('enet.pca', .5, alpha.grid, 5, bin.trai
 
 ### SCRDA ###
 bin.model.scrda.sml <- bin.model(
-  'scrda.sml', 5, bin.train.sml, bin.predict.sml, 
+  'scrda.sml', 3, bin.train.sml, bin.predict.sml, 
   method=GetSCRDAModel(10), preProcess='zv', tuneLength=15
 )
 
@@ -387,7 +389,7 @@ hdrda.grid <- rbind(
   expand.grid(lambda=seq(0, 1, len = 6), gamma=seq(0, 1, len = 8), shrinkage='convex', stringsAsFactors=F)
 )
 bin.model.hdrda.sml <- bin.model(
-  'hdrda.sml', 6, bin.train.sml, bin.predict.sml, 
+  'hdrda.sml', 3, bin.train.sml, bin.predict.sml, 
   method=GetHDRDAModel(), preProcess='zv', tuneGrid=hdrda.grid#tuneLength=10
 )
 bin.model.hdrda.lrg <- bin.model(
@@ -427,7 +429,7 @@ bin.model.svm.radial.sml <- bin.model(
   method='svmRadial', preProcess='zv', tuneLength=25
 )
 bin.model.svm.wt.sml <- bin.model(
-  'svm.wt.sml', 4, bin.train.sml, bin.predict.sml,
+  'svm.wt.sml', 2, bin.train.sml, bin.predict.sml,
   method='svmRadialWeights', preProcess='zv', tuneLength=10
 )
 bin.model.svm.radial.pca <- bin.model(
@@ -531,7 +533,7 @@ bin.model.rf.pca <- bin.model(
 
 ### GBM ###
 bin.model.gbm.sml <- bin.model(
-  'gbm.sml', 5, bin.train.sml, bin.predict.sml, 
+  'gbm.sml', 3, bin.train.sml, bin.predict.sml, 
   method='gbm', preProcess='zv', bag.fraction=.3, tuneLength=5, verbose=F
 )
 bin.gbm.grid <- expand.grid(
@@ -541,11 +543,11 @@ bin.gbm.grid <- expand.grid(
   n.minobsinnode=c(5, 12)
 )
 bin.model.gbm.wt.sml <- bin.model(
-  'gbm.wt.sml', 5, bin.train.sml, bin.predict.sml, weight.fun=bin.weights,
+  'gbm.wt.sml', 3, bin.train.sml, bin.predict.sml, weight.fun=bin.weights,
   method='gbm', preProcess='zv', tuneGrid=bin.gbm.grid, verbose=F, bag.fraction=.3
 )
 bin.model.gbm.pca <- bin.model(
-  'gbm.pca', 5, bin.train.pca, bin.predict.pca,
+  'gbm.pca', 3, bin.train.pca, bin.predict.pca,
   method='gbm', preProcess='zv', bag.fraction=.3, tuneLength=5, verbose=F
 )
 
