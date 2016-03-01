@@ -1,0 +1,130 @@
+---
+title: "Results (Iteration 2)"
+author: Eric Czech
+output: html_document
+#output: ioslides_presentation
+widescreen: yes
+date: "`r format(Sys.time(), '%d %B, %Y, %H:%M')`"
+knit: (function(inputFile, encoding) { rmarkdown::render(
+        inputFile, encoding=encoding, 
+        output_file=file.path(dirname(inputFile), 'pres_02_output', 'cosmic', 'pres.doc.html')) })
+---
+
+```{r init, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+library(knitr)
+opts_chunk$set(root.dir = '~/repos/musc_genomics/src/R/main/data_pres/test')
+setwd('~/repos/musc_genomics/src/R/main')
+source('data_model/training_viz.R')
+lib('plotly')
+
+# When changing the response type, make sure to also change the output
+# directory in the "knit" function setting in header
+
+RESPONSE_TYPE <- 'cosmic'
+RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
+RESPONSE_THRESH <- -1
+
+# RESPONSE_TYPE <- 'ctd'
+# RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
+# RESPONSE_THRESH <- -1
+
+cache <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
+
+d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
+
+
+cv.res <- cache$get('cv_model_perf')
+ho.res <- cache$get('ho_model_perf')
+
+cb.acc.rec <- cache$get('cb_acc_rec')
+ho.acc.rec <- cache$get('ho_acc_rec')
+
+p.fold.roc <- PlotPerFoldROC(cv.res)
+p.cv.roc <- PlotAllFoldROC(cv.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
+p.ho.roc <- PlotHoldOutROC(ho.res) %>% ggplotly() %>% layout(showlegend = T) %>% plot.ly
+
+d.res <- cache$get('response_data')
+p.res.dist <- PlotResponseDist(RESPONSE_TYPE, d.res, response.cutoff=-1)
+
+y <- DichotomizeOutcome(d.prep[,'response'], RESPONSE_THRESH)
+y.cache <- DichotomizeOutcome(d.res, RESPONSE_THRESH)
+if (!all(y == y.cache)) stop('Cached response not equal to inferred response')
+
+p.cv.cm <- PlotFoldConfusion(cv.res)
+p.ho.cm <- PlotHoldOutConfusion(ho.res)
+
+p.cv.kappa <- PlotFoldMetric(cv.res, 'kappa')
+p.cv.acc <- PlotFoldMetric(cv.res, 'acc')
+p.ho.kappa <- PlotHoldOutMetric(ho.res, 'kappa')# + ylim(.4, .9)
+p.ho.acc <- PlotHoldOutMetric(ho.res, 'acc')
+```
+
+<br>
+
+<center><h1>
+```{r, results='asis', echo=FALSE}
+cat(RESPONSE_TYPE)
+```
+ Classification Results</h1></center>
+<hr>
+
+## Data Summary
+
+Original dataset dimensions: 
+```{r, results='asis', echo=FALSE}
+dim(d.prep)
+```
+
+Response was standardized and split at -1.  Response frequency:
+```{r, echo=FALSE}
+table(y)
+```
+
+No Information Rate (this is the accuracy to beat) = 
+```{r, echo=FALSE, results='asis'}
+cat(max(table(y))/length(y))
+```
+
+Data was split 3-ways into 50% training, 33% holdout, and 17% calibration
+
+## Kappa Performance
+
+Kappa values across 3 times repeated 10-fold CV:
+
+```{r, echo=FALSE, fig.align='center', fig.width=10, fig.height=5}
+p.cv.kappa
+```
+
+Kappa values on holdout:
+
+```{r, echo=FALSE, fig.align='center', fig.width=10, fig.height=5}
+p.ho.kappa
+```
+
+## Accuracy Performance
+
+Accuracy across 3 times repeated 10-fold CV:
+
+```{r, echo=FALSE, fig.align='center', fig.width=10, fig.height=5}
+p.cv.acc
+```
+
+Accuracy on holdout:
+
+```{r, echo=FALSE, fig.align='center', fig.width=10, fig.height=5}
+p.ho.acc
+```
+
+## Predictions with Probability Window
+
+Predictive accuracy when allowing an upper and lower boundary on probability predictions (this leads to some cases being classified as 'na' or 'unsure'):
+
+```{r, echo=FALSE}
+knitr::kable(head(cb.acc.rec, 25))
+```
+
+Accuracy results when applying a window on predictions of [.4, .6]:
+
+```{r, echo=FALSE}
+knitr::kable(ho.acc.rec)
+```
