@@ -41,7 +41,7 @@ GetFeatureScore <- function(x, y) {
 }
 
 # Compute scores for all features
-scores <- sapply(X, function(x){ BasicFeatureScore(x, y) } )
+scores <- sapply(X, function(x){ GetFeatureScore(x, y) } )
 
 # Rank features across the whole set as well as by type (e.g. Copy Number vs Gene Expression)
 gene.scores <- data.frame(score=scores) %>% add_rownames(var='feature') %>% 
