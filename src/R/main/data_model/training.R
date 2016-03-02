@@ -10,6 +10,7 @@ options( java.parameters = "-Xmx4g" )
 source('utils.R')
 source('data_model/training_lib.R')
 source('data_model/training_models.R')
+source('data_model/training_filter.R')
 source('data_model/training_viz.R')
 source('~/repos/portfolio/functional/ml/R/trainer.R')
 source('~/repos/portfolio/functional/ml/R/results.R')
@@ -22,16 +23,9 @@ lib('ROCR')
 lib('plotly')
 SEED <- 1024
 
-RESPONSE_TYPE <- 'cosmic' 
-RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
-RESPONSE_THRESH <- -1 
-SELECTION_THRESH <- .001
-
-# RESPONSE_TYPE <- 'ctd' 
-# RESPONSE_SELECTOR <- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
-# RESPONSE_THRESH <- -1
-# SELECTION_THRESH <- .0001
-
+## Choose dataset to use for modeling (must pick one of the following)
+EnableCosmic()
+#EnableCtd()
 
 PREPROC <- c('zv', 'center', 'scale')
 
@@ -200,7 +194,6 @@ PlotFoldMetric(cv.res, 'spec')
 PlotFoldMetric(cv.res, 'mcp')
 PlotFoldMetric(cv.res, 'acc_margin_0.1')
 PlotFoldMetricByMargin(cv.res, 'acc')
-
 
 ##### Model Correlations #####
 
@@ -453,27 +446,32 @@ RESULT_CACHE$store('ho_acc_rec', ho.acc.rec)
 
 
 
-registerDoMC(1)
+registerDoMC(3)
 GetXGBFilter <- function(limit){
   model.args <- list(
     method='xgbTree',
-    metric='Kappa', 
-    preProcess=c('zv', 'center', 'scale'),
-    tuneLength=8,
+    metric='Accuracy', 
+    preProcess=c('zv'),
+    tuneLength=10,
     trControl=trainControl(
-      method='cv', number=10, classProbs=T, 
+      method='cv', number=8, classProbs=T, 
       returnData=T, savePredictions='final',
-      allowParallel=T, verboseIter=T
+      allowParallel=F, verboseIter=T
     )
   )
   GetLimitFilter(SEED, limit, model.args)
 }
-bin.model.xgb.sbf <- GetXGBFilter(50)
+bin.model.xgb.sbf <- GetXGBFilter(150)
 sbfctrl <- sbfControl(
-  functions=bin.model.xgb.sbf, method='repeatedcv', number=10, times=3, 
-  saveDetails=T, verbose=T, allowParallel=F)
+  functions=bin.model.xgb.sbf, method='repeatedcv', number=10, repeats=3, 
+  saveDetails=T, verbose=T, allowParallel=T)
 
-res.xgb <- sbf(d.tr$X, d.tr$y.bin, sbfControl = sbfctrl)
+X <- rbind(d.tr$X, d.ho$X, d.cb$X)
+y <- c(as.character(d.tr$y.bin), as.character(d.ho$y.bin), as.character(d.cb$y.bin))
+y <- factor(y, levels=levels(d.tr$y.bin))
+res.xgb <- sbf(X, y, sbfControl = sbfctrl)
+
+
 
 ##### Regression Models #####
 

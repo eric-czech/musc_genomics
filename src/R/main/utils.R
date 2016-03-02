@@ -25,6 +25,29 @@ RAW_CACHE <- Cache(dir=CACHE_DIR, project='raw_data')
 TRAIN_CACHE <- Cache(dir=CACHE_DIR, project='training_data')
 # RAW_CACHE$disable()
 
+##### Data Settings #####
+
+RESPONSE_TYPE <- NULL
+RESPONSE_SELECTOR <- NULL
+RESPONSE_THRESH <- NULL
+SELECTION_THRESH <- NULL
+
+EnableCosmic <- function(){
+  RESPONSE_TYPE <<- 'cosmic' 
+  RESPONSE_SELECTOR <<- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
+  RESPONSE_THRESH <<- -1 
+  SELECTION_THRESH <<- .001
+}
+
+EnableCtd <- function(){
+  RESPONSE_TYPE <<- 'ctd'
+  RESPONSE_SELECTOR <<- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
+  RESPONSE_THRESH <<- -1
+  SELECTION_THRESH <<- .0001
+}
+
+
+
 ###### Visualization Utilities #####
 
 plot.ly <- function(p) { p %>% plotly::config(showLink = F, displayModeBar = F) }

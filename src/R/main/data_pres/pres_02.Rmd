@@ -128,3 +128,16 @@ Accuracy results when applying a window on predictions of [.4, .6]:
 ```{r, echo=FALSE}
 knitr::kable(ho.acc.rec)
 ```
+
+## A few Important Features
+
+```{r, echo=FALSE}
+select.vars <- c('ge.ITGB5', 'ge.YAP1', 'ge.ANXA2', 'ge.LMNA', 'ge.ITPRIPL2', 'ge.MYOF')
+X <- d.prep[,select.vars]
+X$response <- y
+melt(X, id.vars='response') %>% 
+  ggplot(aes(x=response, y=value)) + 
+  geom_boxplot(outlier.size=0) +
+  geom_jitter(alpha=.2, width=.3) + 
+  facet_wrap(~variable, scales='free') + theme_bw()
+```

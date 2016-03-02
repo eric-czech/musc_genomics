@@ -1,13 +1,15 @@
-GetLimitFilter <- function(seed, limit, model.args, verbose=T){
-  FeatureScore <- function(x, y) {
-    if (length(unique(x)) == 2){
-      pv <- try(fisher.test(factor(x), y)$p.value, silent = TRUE)
-    } else { 
-      pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], silent = TRUE)
-    }
-    if (any(class(pv) == "try-error") || is.na(pv) || is.nan(pv)) pv <- 1
-    pv
+FeatureScore <- function(x, y) {
+  if (length(unique(x)) == 2){
+    pv <- try(fisher.test(factor(x), y)$p.value, silent = TRUE)
+  } else { 
+    pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], silent = TRUE)
   }
+  if (any(class(pv) == "try-error") || is.na(pv) || is.nan(pv)) pv <- 1
+  pv
+}
+
+GetLimitFilter <- function(seed, limit, model.args, verbose=T){
+  .FeatureScore <- FeatureScore
   list(
     summary = defaultSummary,
     fit = function(x, y, ...){
@@ -33,7 +35,7 @@ GetLimitFilter <- function(seed, limit, model.args, verbose=T){
       ## should return a named logical vector
       if(!is.factor(y))
         stop('y must be factor')
-      FeatureScore(x, y)
+      .FeatureScore(x, y)
     },
     filter = function(score, x, y) {
       score <- sort(score, decreasing=F)
