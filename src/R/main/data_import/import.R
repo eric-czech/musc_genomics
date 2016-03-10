@@ -20,7 +20,7 @@ GetRawData <- function(){
   d <- d.biop %>% 
     left_join(d.ctd2, by='tumor_id') %>% 
     left_join(d.cosmic, by='tumor_id') %>%
-    select(tumor_id, ic_50, auc, everything())
+    select(tumor_id, origin, ic_50, auc, everything())
 }
 
 # d.biop <- GetBioPortalData()

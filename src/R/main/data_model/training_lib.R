@@ -48,7 +48,7 @@ GetSvmSigma <- function(X, frac=1){
 GetTrainingData <- function(cache, response.type, response.selector, min.mutations){
   loader <- function(){
     d <- GetPreparedData(cache)
-    
+
     fields <- d$fields
     c.ge <- fields$gene_expression
     c.cn <- fields$copy_number

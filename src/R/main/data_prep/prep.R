@@ -13,7 +13,7 @@ lib('dplyr')
 lib('reshape2')
 lib('doMC')
 lib('gam')
-registerDoMC(12)
+registerDoMC(3)
 
 # options(enable.cache=T)
 # options(enable.cache=F)
@@ -54,7 +54,7 @@ GetPreparedData <- function(cache, raw.data=NULL, min.mutations=3){
     c.ge <- GetFeatures(d, 'ge')
     c.cn <- GetFeatures(d, 'cn')
     
-    # Determine remaining fields like tumor id, AUC, and IC 50
+    # Determine remaining fields like tumor id, origin, AUC, and IC 50
     c.id <- setdiff(names(d), c(c.mu, c.ge, c.cn))
     
     # Dummy encode mutation values

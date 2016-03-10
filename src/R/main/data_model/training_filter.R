@@ -2,7 +2,8 @@ FeatureScore <- function(x, y) {
   if (length(unique(x)) == 2){
     pv <- try(fisher.test(factor(x), y)$p.value, silent = TRUE)
   } else { 
-    pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], silent = TRUE)
+    #pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], silent = TRUE)
+    pv <- try(t.test(x ~ y)$p.value, silent = TRUE)
   }
   if (any(class(pv) == "try-error") || is.na(pv) || is.nan(pv)) pv <- 1
   pv
@@ -16,19 +17,19 @@ GetLimitFilter <- function(seed, limit, model.args, verbose=T){
       train.args <- model.args
       train.args$x <- x
       train.args$y <- y
-      if (verbose) loginfo('(+ sbf) Training model within filter')
+      if (verbose) cat('(+ sbf) Training model within filter\n')
       set.seed(seed)
       r <- do.call('train', train.args)
-      if (verbose) loginfo('(- sbf) Model training complete')
+      if (verbose) cat('(- sbf) Model training complete\n')
       r
     },
     pred = function(object, x) {
-      if (verbose) loginfo('(+ sbf) Making predictions within filter')
+      if (verbose) cat('(+ sbf) Making predictions within filter\n')
       set.seed(seed)
       pred.class <- data.frame(pred=predict(object, newdata=x, type='raw'))
       set.seed(seed)
       pred.prob <- as.data.frame(predict(object, newdata=x, type = "prob"))
-      if (verbose) loginfo('(- sbf) Predictions complete')
+      if (verbose) cat('(- sbf) Predictions complete\n')
       cbind(pred.class, pred.prob)
     },
     score = function(x, y){
@@ -38,8 +39,10 @@ GetLimitFilter <- function(seed, limit, model.args, verbose=T){
       .FeatureScore(x, y)
     },
     filter = function(score, x, y) {
+      if (verbose) cat(sprintf('(- sbf) Sorting scored feature vector of length %s\n', length(score)))
       score <- sort(score, decreasing=F)
       n.keep <- min(limit, length(score))
+      if (verbose) cat('(- sbf) Feature sort complete\n')
       setNames(c(rep(T, n.keep), rep(F, length(score) - n.keep)), names(score))
     }
   )

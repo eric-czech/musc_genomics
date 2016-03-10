@@ -442,36 +442,6 @@ ho.acc.rec <- get.rectified.accuracy(
 )
 RESULT_CACHE$store('ho_acc_rec', ho.acc.rec)
 
-##### Simple Classification Models #####
-
-
-
-registerDoMC(3)
-GetXGBFilter <- function(limit){
-  model.args <- list(
-    method='xgbTree',
-    metric='Accuracy', 
-    preProcess=c('zv'),
-    tuneLength=10,
-    trControl=trainControl(
-      method='cv', number=8, classProbs=T, 
-      returnData=T, savePredictions='final',
-      allowParallel=F, verboseIter=T
-    )
-  )
-  GetLimitFilter(SEED, limit, model.args)
-}
-bin.model.xgb.sbf <- GetXGBFilter(150)
-sbfctrl <- sbfControl(
-  functions=bin.model.xgb.sbf, method='repeatedcv', number=10, repeats=3, 
-  saveDetails=T, verbose=T, allowParallel=T)
-
-X <- rbind(d.tr$X, d.ho$X, d.cb$X)
-y <- c(as.character(d.tr$y.bin), as.character(d.ho$y.bin), as.character(d.cb$y.bin))
-y <- factor(y, levels=levels(d.tr$y.bin))
-res.xgb <- sbf(X, y, sbfControl = sbfctrl)
-
-
 
 ##### Regression Models #####
 

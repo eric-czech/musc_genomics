@@ -121,6 +121,9 @@ GetBioPortalData <- function(){
     mutate(tumor_id=str_replace(tumor_id, '^X', '')) %>% 
     # Match any known conflicts in tumor IDs to custom IDs
     mutate(tumor_id=ifelse(tumor_id %in% names(custom.tumorids), custom.tumorids[tumor_id], tumor_id)) %>%
+    # Extract tumor origin from tumor_id (e.g. 1321N1_CENTRAL_NERVOUS_SYSTEM -> CENTRAL_NERVOUS_SYSTEM)
+    mutate(origin=str_extract(tumor_id, '(?<=_).*$')) %>%
+    mutate(origin=ifelse(is.na(origin), 'Unknown', origin)) %>%
     # Restrict tumor IDs to only substring before first underscore
     mutate(tumor_id=str_replace(tumor_id, '_.*', ''))
   
@@ -138,8 +141,8 @@ GetBioPortalData <- function(){
   
   # Merge all datasets above into one data frame
   biop.data <- biop.cn %>% 
-    inner_join(biop.ge, by='tumor_id') %>%
-    inner_join(biop.mu, by='tumor_id')
+    inner_join(biop.ge, by=c('tumor_id', 'origin')) %>%
+    inner_join(biop.mu, by=c('tumor_id', 'origin'))
   
   # Verify that all tumor IDs were found in each dataset
   if (nrow(biop.data) != nrow(biop.cn))
