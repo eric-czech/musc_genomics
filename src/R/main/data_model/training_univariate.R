@@ -9,6 +9,7 @@
 #'-----------------------------------------------------------------------------
 source('utils.R')
 source('data_model/training_filter.R')
+source('data_model/filtering_lib.R')
 
 ##### Data Prep #####
 
@@ -19,54 +20,70 @@ EnableCosmic()
 # 
 d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
 
-X <- d.prep %>% select(-tumor_id, -response)
+X <- d.prep %>% select(-tumor_id, -response) %>% mutate(origin=TransformOriginSolidLiquid(origin))
 y <- DichotomizeOutcome(d.prep[,'response'], threshold = RESPONSE_THRESH)
 
 ##### Univariate Feature Scoring #####
 
-#' @title Compute score for single classification feature
-#' @description Computes score for feature as either p-value 
-#' for Fisher's exact test if the feature is binary or as
-#' the p-value from a two-sided t-test otherwise
-#' @param x feature to get score for 
-#' @param y response factor (e.g. 'pos' or 'neg')
-GetFeatureScore <- function(x, y) {
-  if (length(unique(x)) == 2){
-    pv <- try(fisher.test(factor(x), y)$p.value, silent = TRUE)
+# Compute scores for all features
+options(stringsAsFactors=F)
+registerDoMC(3)
+scores <- foreach(xn=names(X), .combine=rbind)%dopar%{
+  x <- X[,xn]
+  score <- FeatureScore(x, y, t.test.alt='two.sided')
+  if (length(unique(x)) == 2) {
+    direction <- 'na'
   } else {
-    pv <- try(t.test(x ~ y)$p.value, silent = TRUE)
+    mu <- mean(x[y == 'pos']) - mean(x[y == 'neg'])
+    direction <- ifelse(mu > 0, 'greater', 'less')
   }
-  if (any(class(pv) == "try-error") || is.na(pv) || is.nan(pv)) pv <- NA
-  pv
+  data.frame(feature=xn, score=score, direction=direction)
 }
 
-# Compute scores for all features
-scores <- sapply(X, function(x){ GetFeatureScore(x, y) } )
 
 # Rank features across the whole set as well as by type (e.g. Copy Number vs Gene Expression)
-gene.scores <- data.frame(score=scores) %>% add_rownames(var='feature') %>% 
+gene.scores <- scores %>%
   mutate(type=str_extract(feature, '.*?(?=\\.)')) %>% 
   mutate(gene=str_replace(feature, paste0(type, '.'), '')) %>% 
   mutate(overall.rank=dense_rank(score)) %>% 
-  arrange(type, overall.rank) %>%
-  group_by(type) %>% mutate(type.rank=row_number()) %>%
-  ungroup %>% arrange(overall.rank)
+  arrange(type, overall.rank) %>% group_by(type) %>% 
+  mutate(type.rank=row_number()) %>% ungroup %>% 
+  arrange(direction, overall.rank) %>% group_by(direction) %>% 
+  mutate(direction.rank=row_number()) %>% ungroup %>% 
+  arrange(overall.rank)
 
 # Compute average ranks for genes with both copy number and gene expression
 gene.avgs <- gene.scores %>% 
-  filter(type %in% c('ge', 'cn')) %>%
-  group_by(gene) %>% summarise(avg.rank=mean(type.rank), n=n()) %>% 
+  filter(type %in% c('ge', 'cn')) %>% group_by(gene) %>% 
+  dplyr::summarise(
+    avg.rank=mean(type.rank), 
+    direction=ifelse(length(unique(direction))==1, direction[1], 'opposing'), 
+    n=n()) %>% 
   ungroup %>% filter(n > 1) %>% arrange(avg.rank) %>% 
-  select(-n) %>% head(100)
+  select(-n) %>% head(250)
 
 export.path <- '~/repos/musc_genomics/src/R/main/data_export/univariate_analysis'
 gene.scores %>% write.csv(file=file.path(export.path, 'gene.scores.csv'), row.names=F)
 gene.avgs %>% write.csv(file=file.path(export.path, 'gene.averages.csv'), row.names=F)
 
-##### Single Feature Plots #####
+##### Feature Plots #####
 
-data.frame(x=X[,'ge.KRAS'], y=y) %>% 
+data.frame(x=X[,'cn.SMAD4'], y=y) %>% 
   ggplot(aes(x=y, y=x)) + geom_boxplot() + theme_bw()
+
+top.avg.feats <- gene.avgs %>% filter(direction=='greater') %>% head(9) %>% .$gene
+top.avg.feats <- foreach(gene=top.avg.feats, .combine=rbind) %do%{
+  rbind(
+    data.frame(gene=gene, value=X[,paste0('cn.', gene)], type='CopyNum', y=y),
+    data.frame(gene=gene, value=X[,paste0('ge.', gene)], type='Expression', y=y)
+  )
+}
+top.avg.feats %>%
+  ggplot(aes(x=type, y=value, color=y)) + geom_boxplot(position='dodge') +
+  facet_wrap(~gene, scales='free') + 
+  theme_bw() + ggtitle('Top Features Across CN and GE') +
+  scale_color_discrete(guide=guide_legend(title='Sensitivity')) +
+  ggsave(file.path(export.path, 'gene.averages.plot.png'))
 
 ##### Univariate Classification Rules #####
 
@@ -88,7 +105,7 @@ get.univariate.acc <- function(x, y){
 
 # Plot accuracy profile for univariate rule
 #univ.feat <- 'ge.YAP1'
-univ.feat <- 'ge.KRAS'
+univ.feat <- 'ge.SMAD4'
 
 acc <- get.univariate.acc(X[,univ.feat], y)
 acc %>% ggplot(aes(x=brk, y=acc)) + geom_line() + 

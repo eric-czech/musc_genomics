@@ -62,8 +62,8 @@ PlotFoldConfusion <- function(cv.res){
 PlotFoldMetric <- function(cv.res, metric){
   GetCVScalarStats(cv.res) %>% 
     rename_(value=metric) %>%
-    mutate(model=factor(model)) %>%
-    mutate(model=reorder(model, value, FUN = median)) %>%
+    #mutate(model=factor(model)) %>%
+    #mutate(model=reorder(model, value, FUN = median)) %>%
     ggplot(aes(x=model, y=value, color=model)) +
     geom_boxplot() + coord_flip() + theme_bw() + ylab(metric) + 
     scale_colour_discrete(guide = FALSE) +

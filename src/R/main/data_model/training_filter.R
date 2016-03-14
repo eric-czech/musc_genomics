@@ -1,9 +1,26 @@
-FeatureScore <- function(x, y) {
+
+#' @title Compute score for single classification feature
+#' @description Computes score for feature as either p-value 
+#' for Fisher's exact test if the feature is binary or as
+#' the p-value from a two-sided t-test otherwise
+#' @param x feature to get score for 
+#' @param y response factor (e.g. 'pos' or 'neg')
+#' @param t.test.alt alternative for t.test of continuous feature
+FeatureScore <- function(x, y, t.test.alt='two.sided') {
+  if (nlevels(y) != 2)
+    stop('Response factor (y) must be a 2-level factor')
+  
+  # Use fisher test when x is a factor
   if (length(unique(x)) == 2){
     pv <- try(fisher.test(factor(x), y)$p.value, silent = TRUE)
+    
+    # Use t-test otherwise
   } else { 
-    #pv <- try(anova(lm(x ~ y), test = "F")[1, "Pr(>F)"], silent = TRUE)
-    pv <- try(t.test(x ~ y)$p.value, silent = TRUE)
+    # Split x values into two groups based on response
+    lvl <- levels(y)
+    x1 <- x[y == lvl[1]]
+    x2 <- x[y == lvl[2]]
+    pv <- try(t.test(x1, x2, alternative=t.test.alt)$p.value, silent = TRUE)
   }
   if (any(class(pv) == "try-error") || is.na(pv) || is.nan(pv)) pv <- 1
   pv

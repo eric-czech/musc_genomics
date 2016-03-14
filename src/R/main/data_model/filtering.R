@@ -30,7 +30,7 @@ EnableCosmic()
 
 PREPROC <- c('zv', 'center', 'scale')
 
-RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
+RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'filter_result_data'), project=RESPONSE_TYPE)
 select <- dplyr::select
 
 d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
@@ -58,14 +58,19 @@ trainer$generateFoldIndex(d.tr$y, CreateFoldIndex)
 fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=2)
 trainer$generateFoldData(d.tr$X, d.tr$y, fold.data.gen, FilteringDataSummarizer())
 
-GetPrepFun <- function(origin.transform=TransformOriginSolidLiquid){
+GetPrepFun <- function(origin.transform=NULL){
   function(X){
-    X %>% mutate(origin=origin.transform(origin))
+    if (!'origin' %in% names(X)) X
+    else {
+      if (is.null(origin.transform))
+        stop('Origin found in feature set but transform given was null')
+      X %>% mutate(origin=origin.transform(origin))
+    }
   }
 }
 
 GetFilterModel <- function(name, max.feats, n.core=3, 
-                           origin.transform=TransformOriginSolidLiquid, ...){
+                           origin.transform=NULL, ...){
   prep.fun <- GetPrepFun(origin.transform)
   pred.fun <- function(fit, d, i){ 
     X <- d$X.test[, fit$finalModel$xNames] %>% prep.fun
@@ -79,7 +84,10 @@ GetFilterModel <- function(name, max.feats, n.core=3,
     train=function(d, idx, i){
       registerDoMC(n.core)
       # d$feat.scores contains scores for all 36k features
-      top.feats <- d$feat.scores %>% arrange(score) %>% head(max.feats) %>% .$feature 
+      feats <- d$feat.scores
+      if (is.null(origin.transform))
+        feats <- feats %>% filter(feature != 'origin')
+      top.feats <- feats %>% arrange(score) %>% head(max.feats) %>% .$feature 
       X <- prep.fun(d$X.train[,top.feats])
       y <- d$y.train.bin
       train(X, y, ...)
@@ -87,10 +95,11 @@ GetFilterModel <- function(name, max.feats, n.core=3,
   )
 }
 
-GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5){
-  name <- sprintf('xgb.%s', max.feats)
+GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.transform=NULL){
+  name <- sprintf('xgb.%s.%s', max.feats, ifelse(is.null(origin.transform), 'norigin', 'worigin'))
   GetFilterModel(
     name, max.feats, n.core=n.core,
+    origin.transform=origin.transform,
     method='xgbTree', metric='Accuracy', 
     preProcess=c('zv'), tuneLength=tuneLength,
     trControl=trainControl(
@@ -101,14 +110,28 @@ GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5){
   )
 }
 
-model.xgb.15 <- GetXGBoostModel(15, n.core=3)
+models.xgb <- lapply(seq(5, 100, by=5), function(x){ 
+  list(model=GetXGBoostModel(x, n.core=3, origin.transform=NULL), max.feats=x)
+  #list(model=GetXGBoostModel(x, n.core=3, origin.transform=TransformOriginSolidLiquid), max.feats=x)
+})
 
-models <- list()
+
 ec <- F
-models$xgb.15 <- trainer$train(model.xgb.15, enable.cache=ec)
+models <- lapply(models.xgb, function(m){ trainer$train(m$model, enable.cache=ec)}) %>% 
+  setNames(sapply(models.xgb, function(m) m$model$name))
+
+# models$xgb.15 <- trainer$train(model.xgb.15, enable.cache=ec)
 
 cv.res <- SummarizeTrainingResults(
   models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc'))
+
+# RESULT_CACHE$store('cv_model_perf_w_origin', cv.res)
+
+PlotFoldConfusion(cv.res)
+PlotFoldMetric(cv.res, 'acc')
+PlotFoldMetric(cv.res, 'cacc')
+PlotFoldMetric(cv.res, 'nir')
+PlotFoldMetric(cv.res, 'auc')
 
 ##### Simple Filter Models #####
 

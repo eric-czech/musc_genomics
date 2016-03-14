@@ -7,7 +7,8 @@
 #' @author eczech
 #'-----------------------------------------------------------------------------
 
-GetFeatScoringFoldGen <- function(preproc, y.tresh, feat.limit=5000, n.core=4){    
+GetFeatScoringFoldGen <- function(preproc, y.tresh, feat.limit=5000, n.core=4,
+                                  t.test.alt='greater'){    
   function(X.train.all, y.train, X.test, y.test){
     loginfo('Running feature scoring')
     registerDoMC(n.core)
@@ -18,7 +19,7 @@ GetFeatScoringFoldGen <- function(preproc, y.tresh, feat.limit=5000, n.core=4){
     loginfo('Creating feature scores')
     feat.scores <- foreach(feat=names(X.train.all), .combine=rbind)%dopar%{
       if (feat == 'origin') score <- 0
-      else score <- FeatureScore(X.train.all[,feat], y.train.bin)
+      else score <- FeatureScore(X.train.all[,feat], y.train.bin, t.test.alt=t.test.alt)
       data.frame(feature=feat, score=score, stringsAsFactors = F)
     }
     
