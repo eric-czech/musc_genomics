@@ -60,18 +60,25 @@ gene.avgs <- gene.scores %>%
     direction=ifelse(length(unique(direction))==1, direction[1], 'opposing'), 
     n=n()) %>% 
   ungroup %>% filter(n > 1) %>% arrange(avg.rank) %>% 
-  select(-n) %>% head(250)
+  select(-n)
 
 export.path <- '~/repos/musc_genomics/src/R/main/data_export/univariate_analysis'
 gene.scores %>% write.csv(file=file.path(export.path, 'gene.scores.csv'), row.names=F)
 gene.avgs %>% write.csv(file=file.path(export.path, 'gene.averages.csv'), row.names=F)
+
+options(stringsAsFactors=F)
+dt <- read.csv('https://rawgit.com/eric-czech/musc_genomics/master/src/R/main/data_export/univariate_analysis/gene.scores.csv')
 
 ##### Feature Plots #####
 
 data.frame(x=X[,'cn.SMAD4'], y=y) %>% 
   ggplot(aes(x=y, y=x)) + geom_boxplot() + theme_bw()
 
+
 top.avg.feats <- gene.avgs %>% filter(direction=='greater') %>% head(9) %>% .$gene
+# top.avg.feats <- gene.scores %>% head(9) %>% .$gene
+# gene.avgs %>% filter(gene %in% top.avg.feats)
+
 top.avg.feats <- foreach(gene=top.avg.feats, .combine=rbind) %do%{
   rbind(
     data.frame(gene=gene, value=X[,paste0('cn.', gene)], type='CopyNum', y=y),
