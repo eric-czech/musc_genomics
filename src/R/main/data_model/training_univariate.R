@@ -66,8 +66,7 @@ export.path <- '~/repos/musc_genomics/src/R/main/data_export/univariate_analysis
 gene.scores %>% write.csv(file=file.path(export.path, 'gene.scores.csv'), row.names=F)
 gene.avgs %>% write.csv(file=file.path(export.path, 'gene.averages.csv'), row.names=F)
 
-options(stringsAsFactors=F)
-dt <- read.csv('https://rawgit.com/eric-czech/musc_genomics/master/src/R/main/data_export/univariate_analysis/gene.scores.csv')
+
 
 ##### Feature Plots #####
 
@@ -88,9 +87,10 @@ top.avg.feats <- foreach(gene=top.avg.feats, .combine=rbind) %do%{
 top.avg.feats %>%
   ggplot(aes(x=type, y=value, color=y)) + geom_boxplot(position='dodge') +
   facet_wrap(~gene, scales='free') + 
-  theme_bw() + ggtitle('Top Features Across CN and GE') +
+  #theme_bw() + ggtitle('Top Features Across CN and GE') +
+  theme_bw() + ggtitle('Top Standalone Features') +
   scale_color_discrete(guide=guide_legend(title='Sensitivity')) +
-  ggsave(file.path(export.path, 'gene.averages.plot.png'))
+  ggsave(file.path(export.path, 'top.genes.plot.png'))
 
 ##### Univariate Classification Rules #####
 

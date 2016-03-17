@@ -128,6 +128,7 @@ PlotHoldOutConfusion <- function(ho.res){
     }) %>% melt(id.vars='model') %>% 
     ggplot(aes(x=model, y=value, fill=model)) + geom_bar(stat='identity') +
     facet_wrap(~variable, scales='free') + theme_bw() + 
+    theme(axis.text.x = element_text(angle = 25, hjust = 1)) +
     xlab('Model') + ylab('Count') + 
     ggtitle('Confusion Matrix Distributions')
 }

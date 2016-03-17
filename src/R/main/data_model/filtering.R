@@ -28,9 +28,14 @@ SEED <- 1024
 EnableCosmic()
 #EnableCtd()
 
+# TRAINER_DATA_DIRNAME <- 'filtering_data'
+TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
+# RES_CACHE_DIRNAME <- 'filter_result_data'
+RES_CACHE_DIRNAME <- 'filter_result_data.ga'
+
 PREPROC <- c('zv', 'center', 'scale')
 
-RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'filter_result_data'), project=RESPONSE_TYPE)
+RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, RES_CACHE_DIRNAME), project=RESPONSE_TYPE)
 select <- dplyr::select
 
 d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
@@ -52,7 +57,7 @@ d.ho <- split.data(d.prep, -idx.tr, 'holdout', nrow(d.prep))
 
 ##### Model Trainer #####
 
-trainer <- Trainer(cache.dir=file.path(CACHE_DIR, 'filtering_data'), 
+trainer <- Trainer(cache.dir=file.path(CACHE_DIR, TRAINER_DATA_DIRNAME), 
                    cache.project=RESPONSE_TYPE, seed=SEED)
 trainer$generateFoldIndex(d.tr$y, CreateFoldIndex)
 fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=2)
@@ -87,6 +92,10 @@ GetFilterModel <- function(name, max.feats, n.core=3,
       feats <- d$feat.scores
       if (is.null(origin.transform))
         feats <- feats %>% filter(feature != 'origin')
+      
+      # Temporarily filter to only GE and MU features
+      # feats <- feats %>% filter(str_detect(feature, '^mu\\.') | str_detect(feature, '^ge\\.'))
+      
       top.feats <- feats %>% arrange(score) %>% head(max.feats) %>% .$feature 
       X <- prep.fun(d$X.train[,top.feats])
       y <- d$y.train.bin
@@ -95,8 +104,10 @@ GetFilterModel <- function(name, max.feats, n.core=3,
   )
 }
 
-GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.transform=NULL){
-  name <- sprintf('xgb.%s.%s', max.feats, ifelse(is.null(origin.transform), 'norigin', 'worigin'))
+GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.transform=NULL, origin.name=NULL){
+  if (is.null(origin.name))
+    origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
+  name <- sprintf('xgb.%s.%s', max.feats, origin.name)
   GetFilterModel(
     name, max.feats, n.core=n.core,
     origin.transform=origin.transform,
@@ -110,28 +121,111 @@ GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.trans
   )
 }
 
-models.xgb <- lapply(seq(5, 100, by=5), function(x){ 
-  list(model=GetXGBoostModel(x, n.core=3, origin.transform=NULL), max.feats=x)
+#n.feats <- c(c(2,3,4), seq(5, 100, by=5), c(150, 200, 500))
+n.feats <- c(c(2,3,4,5), seq(10, 50, by=10))
+origin.name <- 'wmostfreqorigin'
+models.xgb <- lapply(n.feats, function(x){ 
+  #list(model=GetXGBoostModel(x, n.core=3, origin.transform=NULL), max.feats=x)
   #list(model=GetXGBoostModel(x, n.core=3, origin.transform=TransformOriginSolidLiquid), max.feats=x)
+  list(model=GetXGBoostModel(x, n.core=3, origin.transform=TransformOriginMostFrequent, origin.name=origin.name), max.feats=x)
 })
 
 
-ec <- F
-models <- lapply(models.xgb, function(m){ trainer$train(m$model, enable.cache=ec)}) %>% 
+
+ec <- T
+models <- lapply(models.xgb, function(m){ trainer$train(m$model, enable.cache=ec)} ) %>% 
   setNames(sapply(models.xgb, function(m) m$model$name))
 
 # models$xgb.15 <- trainer$train(model.xgb.15, enable.cache=ec)
 
 cv.res <- SummarizeTrainingResults(
-  models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc'))
+  models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
+)
 
-# RESULT_CACHE$store('cv_model_perf_w_origin', cv.res)
+cv.perf.key <- paste('cv_model_perf', origin.name, sep='_')
+RESULT_CACHE$store(cv.perf.key, cv.res)
+# cv.res <- RESULT_CACHE$load('cv_model_perf_norigin')
 
 PlotFoldConfusion(cv.res)
 PlotFoldMetric(cv.res, 'acc')
 PlotFoldMetric(cv.res, 'cacc')
+PlotFoldMetric(cv.res, 'kappa')
 PlotFoldMetric(cv.res, 'nir')
 PlotFoldMetric(cv.res, 'auc')
+
+# Look at selected feature frequencies
+top.model <- 'xgb.10.wmostfreqorigin'
+lapply(models[[top.model]], function(m) m$fit$finalModel$xNames) %>% unlist %>% table
+
+
+##### Holdout Fit #####
+
+ho.fit.key <- paste('holdout_fit', origin.name, sep='_')
+ho.dat.key <- paste('holdout_data', origin.name, sep='_')
+ho.fit <- trainer$getCache()$load(ho.fit.key, function(){
+  trainer$holdout(lapply(models.xgb, function(m) m$model), d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, ho.dat.key) 
+})
+
+# Look at selected features
+ho.fit[[top.model]]$fit$finalModel$xNames
+
+ho.res <- SummarizeTrainingResults(list(ho.fit), T, model.summary=ResSummaryFun('roc'))
+ho.perf.key <- paste('ho_model_perf', origin.name, sep='_')
+RESULT_CACHE$store(ho.perf.key, ho.res)
+# ho.res <- RESULT_CACHE$load('ho_model_perf_wmostfreqorigin')
+
+PlotHoldOutConfusion(ho.res)
+PlotHoldOutMetric(ho.res, 'auc') 
+PlotHoldOutMetric(ho.res, 'acc') 
+PlotHoldOutMetric(ho.res, 'cacc') 
+PlotHoldOutMetric(ho.res, 'kappa') 
+PlotHoldOutMetric(ho.res, 'mcp') 
+
+##### Calibration #####
+
+#cal.data <- cv.res$predictions
+cal.data <- ho.res$predictions
+cal.data %>% group_by(model) %>% do({
+  d <- .
+  p <- seq(0, 1, by=.1)
+  d %>% mutate(bin=cut(y.pred.prob, breaks=p, include.lowest=T)) %>%
+    group_by(bin) %>% summarise(pct.pos=sum(y.test == 'pos')/n(), pct.neg=sum(y.test == 'neg')/n(), n=n())
+}) %>% ggplot(aes(x=bin, y=pct.pos)) + geom_bar(stat='identity') + facet_wrap(~model)
+
+##### Rectified Predictions #####
+
+get.rectified.accuracy <- function(
+  y.pred, y.test, 
+  p.lo.seq=seq(.025, .5, by=.025), 
+  p.hi.seq=seq(.5, .975, by=.025)){
+  
+  foreach(p.lo=p.lo.seq, .combine=rbind) %:%
+    foreach(p.hi=p.hi.seq, .combine=rbind) %do%{
+      p.rec <- factor(sapply(y.pred, function(p){
+        if (p <= p.lo) 'neg'
+        else if (p >= p.hi) 'pos'
+        else 'na'
+      }))
+      n.na <- sum(p.rec == 'na')
+      n.pos <- sum(p.rec == 'pos')
+      n.neg <- sum(p.rec == 'neg')
+      acc.pos <- sum(p.rec == 'pos' & y.test == 'pos')/n.pos
+      acc.neg <- sum(p.rec == 'neg' & y.test == 'neg')/n.neg
+      acc.all <- sum(p.rec == 'pos' & y.test == 'pos') + sum(p.rec == 'neg' & y.test == 'neg')
+      acc.all <- acc.all / (n.pos + n.neg)
+      data.frame(
+        n=length(p.rec), n.na=n.na, n.pos=n.pos, n.neg=n.neg, 
+        acc.pos=acc.pos, acc.neg=acc.neg, acc.all=acc.all,
+        p.lo=p.lo, p.hi=p.hi
+      )
+    }
+}
+
+fit <- ho.fit$xgb.10.worigin
+ho.acc.rec <- get.rectified.accuracy(
+  fit$y.pred$prob, fit$y.test,
+  p.lo.seq=.3, p.hi.seq=.7
+)
 
 ##### Simple Filter Models #####
 

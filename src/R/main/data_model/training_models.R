@@ -531,6 +531,13 @@ bin.model.rf.pca <- bin.model(
 #   }
 # )
 
+
+### XGB ###
+bin.model.xgb.sml <- bin.model(
+  'xgb.sml', 3, bin.train.sml, bin.predict.sml, 
+  method='xgbTree', preProcess='zv', tuneLength=8
+)
+
 ### GBM ###
 bin.model.gbm.sml <- bin.model(
   'gbm.sml', 3, bin.train.sml, bin.predict.sml, 

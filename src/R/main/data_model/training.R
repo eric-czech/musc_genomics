@@ -102,10 +102,13 @@ bin.sml.models$ridge.wt <- trainer$train(bin.model.ridge.wt.sml, enable.cache=ec
 bin.sml.models$enet <- trainer$train(bin.model.enet.sml, enable.cache=ec)
 bin.sml.models$enet.wt <- trainer$train(bin.model.enet.wt.sml, enable.cache=ec)
 bin.sml.models$gbm <- trainer$train(bin.model.gbm.sml, enable.cache=ec)
+bin.sml.models$xgb <- trainer$train(bin.model.xgb.sml, enable.cache=ec)
 bin.sml.models$gbm.wt <- trainer$train(bin.model.gbm.wt.sml, enable.cache=ec)
 bin.sml.models$c50.wt <- trainer$train(bin.model.c50.wt.sml, enable.cache=ec)
 bin.sml.models$scrda <- trainer$train(bin.model.scrda.sml, enable.cache=ec)
 bin.sml.models$hdrda <- trainer$train(bin.model.hdrda.sml, enable.cache=ec)
+
+
 
 ens.rfe.sizes.fun = function(nrow, ncol){ c(50, 100, 150, 200, 300, 500) }
 bin.model.ens.rfe <- GetRFEEnsemble('ens.rfe', bin.train.sml, ens.rfe.sizes.fun)
