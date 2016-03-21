@@ -59,11 +59,13 @@ PlotFoldConfusion <- function(cv.res){
     ggtitle('Confusion Matrix Distributions')
 }
 
-PlotFoldMetric <- function(cv.res, metric){
-  GetCVScalarStats(cv.res) %>% 
-    rename_(value=metric) %>%
-    #mutate(model=factor(model)) %>%
-    #mutate(model=reorder(model, value, FUN = median)) %>%
+PlotFoldMetric <- function(cv.res, metric, order.by.score=T){
+  p <- GetCVScalarStats(cv.res) %>% 
+    rename_(value=metric)
+  if (order.by.score)
+    p <- p %>% mutate(model=factor(model)) %>%
+      mutate(model=reorder(model, value, FUN = median))
+  p %>%
     ggplot(aes(x=model, y=value, color=model)) +
     geom_boxplot() + coord_flip() + theme_bw() + ylab(metric) + 
     scale_colour_discrete(guide = FALSE) +

@@ -32,7 +32,7 @@ PREPROC <- c('zv', 'center', 'scale')
 RESULT_CACHE <- Cache(dir=file.path(CACHE_DIR, 'result_data'), project=RESPONSE_TYPE)
 select <- dplyr::select
 
-d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
+d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3) %>% select(-origin)
 
 # Training data exports:
 # d.prep %>% mutate(response.class=DichotomizeOutcome(response, threshold = RESPONSE_THRESH)) %>%

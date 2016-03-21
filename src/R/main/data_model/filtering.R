@@ -29,9 +29,12 @@ EnableCosmic()
 #EnableCtd()
 
 # TRAINER_DATA_DIRNAME <- 'filtering_data'
-TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
+# TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
+TRAINER_DATA_DIRNAME <- 'filtering_data.ga.ds'
+
 # RES_CACHE_DIRNAME <- 'filter_result_data'
-RES_CACHE_DIRNAME <- 'filter_result_data.ga'
+# RES_CACHE_DIRNAME <- 'filter_result_data.ga'
+RES_CACHE_DIRNAME <- 'filter_result_data.ga.ds'
 
 PREPROC <- c('zv', 'center', 'scale')
 
@@ -42,18 +45,24 @@ d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mut
 
 ##### Data Partitioning #####
 
+# Downsampling (not tried yet)
+# set.seed(SEED)
+# ds <- downSample(d.prep %>% select(-response), DichotomizeOutcome(d.prep$response, threshold = RESPONSE_THRESH), list=T)
+# mask <- d.prep[,'tumor_id'] %in% ds$x[,'tumor_id']
+# d.tr <- list(X=ds$x, y=d.prep[,'response'][mask], y.bin=ds$y)
+
 set.seed(SEED)
 idx.tr <- createDataPartition(d.prep[,'response'], p=.8)[[1]]
 
-split.data <- function(data, idx, type, N){
-  d <- data[idx,]; X <- d %>% select(-response, -tumor_id)
-  y <- d[,'response']; y.bin <- DichotomizeOutcome(y, threshold = RESPONSE_THRESH)
-  n <- length(y); n.pos <- sum(y.bin == 'pos')
-  summary <- data.frame(n=n, pct.of.total=n/N, pos=n.pos, pos.pct=n.pos/n, type=type)
-  list(X=X, y=y, y.bin=y.bin, summary=summary)
-}
-d.tr <- split.data(d.prep, idx.tr, 'training', nrow(d.prep))
-d.ho <- split.data(d.prep, -idx.tr, 'holdout', nrow(d.prep))
+# split.data <- function(data, idx, type, N){
+#   d <- data[idx,]; X <- d %>% select(-response, -tumor_id)
+#   y <- d[,'response']; y.bin <- DichotomizeOutcome(y, threshold = RESPONSE_THRESH)
+#   n <- length(y); n.pos <- sum(y.bin == 'pos')
+#   summary <- data.frame(n=n, pct.of.total=n/N, pos=n.pos, pos.pct=n.pos/n, type=type)
+#   list(X=X, y=y, y.bin=y.bin, summary=summary)
+# }
+# d.tr <- split.data(d.prep, idx.tr, 'training', nrow(d.prep))
+# d.ho <- split.data(d.prep, -idx.tr, 'holdout', nrow(d.prep))
 
 ##### Model Trainer #####
 
@@ -152,10 +161,12 @@ PlotFoldMetric(cv.res, 'cacc')
 PlotFoldMetric(cv.res, 'kappa')
 PlotFoldMetric(cv.res, 'nir')
 PlotFoldMetric(cv.res, 'auc')
+PlotFoldMetric(cv.res, 'mcp')
 
 # Look at selected feature frequencies
 top.model <- 'xgb.10.wmostfreqorigin'
-lapply(models[[top.model]], function(m) m$fit$finalModel$xNames) %>% unlist %>% table
+lapply(models[[top.model]], function(m) m$fit$finalModel$xNames) %>% unlist %>% table %>%
+  as.data.frame %>% arrange(desc(Freq)) %>% setNames(c('feature', 'frequency'))
 
 
 ##### Holdout Fit #####

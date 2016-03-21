@@ -533,8 +533,11 @@ bin.model.rf.pca <- bin.model(
 
 
 ### XGB ###
+# For some reason, XGBoost does not work well on multiple cores though
+# it somehow drives a single core up to ~2,000% usage?  Either way, do
+# not increase n.core beyond 1 (it's pretty fast anyways).
 bin.model.xgb.sml <- bin.model(
-  'xgb.sml', 3, bin.train.sml, bin.predict.sml, 
+  'xgb.sml', 1, bin.train.sml, bin.predict.sml, 
   method='xgbTree', preProcess='zv', tuneLength=8
 )
 
