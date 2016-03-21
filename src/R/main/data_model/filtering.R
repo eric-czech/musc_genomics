@@ -87,7 +87,8 @@ GetFilterModel <- function(name, max.feats, n.core=3,
                            origin.transform=NULL, ...){
   prep.fun <- GetPrepFun(origin.transform)
   pred.fun <- function(fit, d, i){ 
-    X <- d$X.test[, fit$finalModel$xNames] %>% prep.fun
+    #X <- d$X.test[, fit$finalModel$xNames] %>% prep.fun
+    X <- d$X.test[, predictors(fit)] %>% prep.fun
     list(
       prob=predict(fit, X, type='prob')[,1], 
       class=predict(fit, X, type='raw')
@@ -113,15 +114,32 @@ GetFilterModel <- function(name, max.feats, n.core=3,
   )
 }
 
-GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.transform=NULL, origin.name=NULL){
+# GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.transform=NULL, origin.name=NULL){
+#   if (is.null(origin.name))
+#     origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
+#   name <- sprintf('xgb.%s.%s', max.feats, origin.name)
+#   GetFilterModel(
+#     name, max.feats, n.core=n.core,
+#     origin.transform=origin.transform,
+#     method='xgbTree', metric='Accuracy', 
+#     preProcess=c('zv'), tuneLength=tuneLength,
+#     trControl=trainControl(
+#       method='cv', number=k, classProbs=T, 
+#       returnData=F, savePredictions='final',
+#       allowParallel=T, verboseIter=F
+#     )
+#   )
+# }
+
+GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, origin.transform=NULL, origin.name=NULL, ...){
   if (is.null(origin.name))
     origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
-  name <- sprintf('xgb.%s.%s', max.feats, origin.name)
+  name <- sprintf('%s.%s.%s', model.name, max.feats, origin.name)
   GetFilterModel(
     name, max.feats, n.core=n.core,
     origin.transform=origin.transform,
-    method='xgbTree', metric='Accuracy', 
-    preProcess=c('zv'), tuneLength=tuneLength,
+    metric='Accuracy', 
+    ...,
     trControl=trainControl(
       method='cv', number=k, classProbs=T, 
       returnData=F, savePredictions='final',
@@ -133,17 +151,27 @@ GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.trans
 #n.feats <- c(c(2,3,4), seq(5, 100, by=5), c(150, 200, 500))
 n.feats <- c(c(2,3,4,5), seq(10, 50, by=10))
 origin.name <- 'wmostfreqorigin'
-models.xgb <- lapply(n.feats, function(x){ 
-  #list(model=GetXGBoostModel(x, n.core=3, origin.transform=NULL), max.feats=x)
-  #list(model=GetXGBoostModel(x, n.core=3, origin.transform=TransformOriginSolidLiquid), max.feats=x)
-  list(model=GetXGBoostModel(x, n.core=3, origin.transform=TransformOriginMostFrequent, origin.name=origin.name), max.feats=x)
+
+models.def <- lapply(n.feats, function(x){ 
+  # origin.transform <- NULL
+  # origin.transform <- TransformOriginSolidLiquid
+  origin.transform <- TransformOriginMostFrequent
+  # m <- GetModelForTransform(
+  #   x, 'xgb', n.core=3, origin.transform=origin.transform, origin.name=origin.name,
+  #   method='xgbTree', tuneLength=8, preProcess='zv'
+  # )
+  m <- GetModelForTransform(
+    x, 'svm', n.core=3, origin.transform=origin.transform, origin.name=origin.name,
+    method='svmRadial', tuneLength=20, preProcess='zv'
+  )
+  list(model=m, max.feats=x)
 })
 
 
 
 ec <- T
-models <- lapply(models.xgb, function(m){ trainer$train(m$model, enable.cache=ec)} ) %>% 
-  setNames(sapply(models.xgb, function(m) m$model$name))
+models <- lapply(models.def, function(m){ trainer$train(m$model, enable.cache=ec)} ) %>% 
+  setNames(sapply(models.def, function(m) m$model$name))
 
 # models$xgb.15 <- trainer$train(model.xgb.15, enable.cache=ec)
 
