@@ -29,12 +29,12 @@ EnableCosmic()
 #EnableCtd()
 
 # TRAINER_DATA_DIRNAME <- 'filtering_data'
-# TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
-TRAINER_DATA_DIRNAME <- 'filtering_data.ga.ds'
+TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
+# TRAINER_DATA_DIRNAME <- 'filtering_data.ga.ds'
 
 # RES_CACHE_DIRNAME <- 'filter_result_data'
-# RES_CACHE_DIRNAME <- 'filter_result_data.ga'
-RES_CACHE_DIRNAME <- 'filter_result_data.ga.ds'
+RES_CACHE_DIRNAME <- 'filter_result_data.ga'
+# RES_CACHE_DIRNAME <- 'filter_result_data.ga.ds'
 
 PREPROC <- c('zv', 'center', 'scale')
 
@@ -45,31 +45,31 @@ d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mut
 
 ##### Data Partitioning #####
 
-# Downsampling (not tried yet)
+# # Downsampling (This did not go well -- all models predict at 50%)
 # set.seed(SEED)
 # ds <- downSample(d.prep %>% select(-response), DichotomizeOutcome(d.prep$response, threshold = RESPONSE_THRESH), list=T)
 # mask <- d.prep[,'tumor_id'] %in% ds$x[,'tumor_id']
-# d.tr <- list(X=ds$x, y=d.prep[,'response'][mask], y.bin=ds$y)
+# d.tr <- list(X=(ds$x %>% select(-tumor_id)), y=d.prep[,'response'][mask], y.bin=ds$y)
 
 set.seed(SEED)
 idx.tr <- createDataPartition(d.prep[,'response'], p=.8)[[1]]
 
-# split.data <- function(data, idx, type, N){
-#   d <- data[idx,]; X <- d %>% select(-response, -tumor_id)
-#   y <- d[,'response']; y.bin <- DichotomizeOutcome(y, threshold = RESPONSE_THRESH)
-#   n <- length(y); n.pos <- sum(y.bin == 'pos')
-#   summary <- data.frame(n=n, pct.of.total=n/N, pos=n.pos, pos.pct=n.pos/n, type=type)
-#   list(X=X, y=y, y.bin=y.bin, summary=summary)
-# }
-# d.tr <- split.data(d.prep, idx.tr, 'training', nrow(d.prep))
-# d.ho <- split.data(d.prep, -idx.tr, 'holdout', nrow(d.prep))
+split.data <- function(data, idx, type, N){
+  d <- data[idx,]; X <- d %>% select(-response, -tumor_id)
+  y <- d[,'response']; y.bin <- DichotomizeOutcome(y, threshold = RESPONSE_THRESH)
+  n <- length(y); n.pos <- sum(y.bin == 'pos')
+  summary <- data.frame(n=n, pct.of.total=n/N, pos=n.pos, pos.pct=n.pos/n, type=type)
+  list(X=X, y=y, y.bin=y.bin, summary=summary)
+}
+d.tr <- split.data(d.prep, idx.tr, 'training', nrow(d.prep))
+d.ho <- split.data(d.prep, -idx.tr, 'holdout', nrow(d.prep))
 
 ##### Model Trainer #####
 
 trainer <- Trainer(cache.dir=file.path(CACHE_DIR, TRAINER_DATA_DIRNAME), 
                    cache.project=RESPONSE_TYPE, seed=SEED)
 trainer$generateFoldIndex(d.tr$y, CreateFoldIndex)
-fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=2)
+fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=6)
 trainer$generateFoldData(d.tr$X, d.tr$y, fold.data.gen, FilteringDataSummarizer())
 
 GetPrepFun <- function(origin.transform=NULL){
@@ -78,7 +78,9 @@ GetPrepFun <- function(origin.transform=NULL){
     else {
       if (is.null(origin.transform))
         stop('Origin found in feature set but transform given was null')
-      X %>% mutate(origin=origin.transform(origin))
+      lvls <- as.character(0:(origin.transform$max.val))
+      X <- X %>% mutate(origin=factor(origin.transform$convert(origin), levels=lvls))
+      as.data.frame(model.matrix(~. - 1, X))
     }
   }
 }
@@ -87,8 +89,7 @@ GetFilterModel <- function(name, max.feats, n.core=3,
                            origin.transform=NULL, ...){
   prep.fun <- GetPrepFun(origin.transform)
   pred.fun <- function(fit, d, i){ 
-    #X <- d$X.test[, fit$finalModel$xNames] %>% prep.fun
-    X <- d$X.test[, predictors(fit)] %>% prep.fun
+    X <- d$X.test[, fit$top.feats] %>% prep.fun
     list(
       prob=predict(fit, X, type='prob')[,1], 
       class=predict(fit, X, type='raw')
@@ -109,27 +110,12 @@ GetFilterModel <- function(name, max.feats, n.core=3,
       top.feats <- feats %>% arrange(score) %>% head(max.feats) %>% .$feature 
       X <- prep.fun(d$X.train[,top.feats])
       y <- d$y.train.bin
-      train(X, y, ...)
+      fit <- train(X, y, ...)
+      fit$top.feats <- top.feats
+      fit
     }
   )
 }
-
-# GetXGBoostModel <- function(max.feats, n.core=3, tuneLength=8, k=5, origin.transform=NULL, origin.name=NULL){
-#   if (is.null(origin.name))
-#     origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
-#   name <- sprintf('xgb.%s.%s', max.feats, origin.name)
-#   GetFilterModel(
-#     name, max.feats, n.core=n.core,
-#     origin.transform=origin.transform,
-#     method='xgbTree', metric='Accuracy', 
-#     preProcess=c('zv'), tuneLength=tuneLength,
-#     trControl=trainControl(
-#       method='cv', number=k, classProbs=T, 
-#       returnData=F, savePredictions='final',
-#       allowParallel=T, verboseIter=F
-#     )
-#   )
-# }
 
 GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, origin.transform=NULL, origin.name=NULL, ...){
   if (is.null(origin.name))
@@ -148,35 +134,64 @@ GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, origin.tr
   )
 }
 
+
+# Static settings
+
+# origin.transform <- NULL
+# origin.transform <- TransformOriginSolidLiquid
+origin.trans <- TransformOriginMostFrequent
 #n.feats <- c(c(2,3,4), seq(5, 100, by=5), c(150, 200, 500))
 n.feats <- c(c(2,3,4,5), seq(10, 50, by=10))
 origin.name <- 'wmostfreqorigin'
 
-models.def <- lapply(n.feats, function(x){ 
-  # origin.transform <- NULL
-  # origin.transform <- TransformOriginSolidLiquid
-  origin.transform <- TransformOriginMostFrequent
-  # m <- GetModelForTransform(
-  #   x, 'xgb', n.core=3, origin.transform=origin.transform, origin.name=origin.name,
-  #   method='xgbTree', tuneLength=8, preProcess='zv'
-  # )
-  m <- GetModelForTransform(
-    x, 'svm', n.core=3, origin.transform=origin.transform, origin.name=origin.name,
-    method='svmRadial', tuneLength=20, preProcess='zv'
-  )
-  list(model=m, max.feats=x)
-})
 
+get.model.definition <- function(...){
+  arg.list <- list(...)
+  lapply(n.feats, function(x){ 
+    list(model=GetModelForTransform(x, ...), max.feats=x)
+  })
+}
+
+models.def <- list()
+models.def$svm <- get.model.definition(
+  'svm', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  method='svmRadial', tuneLength=20, preProcess='zv'
+)
+models.def$enet <- get.model.definition(
+  'enet', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  method='glmnet', tuneLength=20, preProcess='zv'
+)
+models.def$xgb <- get.model.definition(
+  'xgb', n.core=1, origin.transform=origin.trans, origin.name=origin.name,
+  method='xgbTree', tuneLength=8, preProcess='zv'
+)
+models.def$rf <- get.model.definition(
+  'rf', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  method='rf', tuneLength=4, preProcess='zv'
+)
+models.def$etree <- get.model.definition(
+  'etree', n.core=1, origin.transform=origin.trans, origin.name=origin.name,
+  method='extraTrees', tuneLength=4, preProcess='zv'
+)
+
+# This requires too much memory (and performs poorly)
+# models.def$mars <- get.model.definition(
+#   'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+#   method='earth', tuneLength=6, preProcess='zv'
+# )
 
 
 ec <- T
-models <- lapply(models.def, function(m){ trainer$train(m$model, enable.cache=ec)} ) %>% 
-  setNames(sapply(models.def, function(m) m$model$name))
+models <- lapply(names(models.def), function(m){
+  model <- models.def[[m]]
+  lapply(model, function(m.part){ 
+    trainer$train(m.part$model, enable.cache=ec)
+  }) %>% setNames(sapply(model, function(m) m$model$name))
+}) %>% setNames(names(models.def))
 
-# models$xgb.15 <- trainer$train(model.xgb.15, enable.cache=ec)
-
+cv.res.model <- 'etree'
 cv.res <- SummarizeTrainingResults(
-  models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
+  models[[cv.res.model]], T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
 
 cv.perf.key <- paste('cv_model_perf', origin.name, sep='_')
@@ -192,23 +207,50 @@ PlotFoldMetric(cv.res, 'auc')
 PlotFoldMetric(cv.res, 'mcp')
 
 # Look at selected feature frequencies
-top.model <- 'xgb.10.wmostfreqorigin'
-lapply(models[[top.model]], function(m) m$fit$finalModel$xNames) %>% unlist %>% table %>%
+top.model <- 'svm.10.wmostfreqorigin'
+lapply(models$svm[[top.model]], function(m) m$fit$top.feats) %>% unlist %>% table %>%
   as.data.frame %>% arrange(desc(Freq)) %>% setNames(c('feature', 'frequency'))
 
+##### Top Feature Subset Accuracies #####
+
+top.feat.ct <- 10
+top.subset <- sprintf('%s.%s', top.feat.ct, origin.name)
+all.model.names <- unlist(lapply(names(models), function(m) names(models[[m]])))
+top.model.names <- all.model.names[all.model.names %>% str_detect(top.subset)]
+top.models <- foreach(m=names(models)) %do% {
+  best.subset <- names(models[[m]])[names(models[[m]]) %in% top.model.names]
+  if (length(best.subset) != 1 || sum(is.na(best.subset)) > 0)
+    stop('Failed to find best subset model')
+  models[[m]][[best.subset]]
+} %>% setNames(names(models))
+
+top.model.res <- SummarizeTrainingResults(
+  top.models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
+)
+PlotFoldMetric(top.model.res, 'cacc')
 
 ##### Holdout Fit #####
 
 ho.fit.key <- paste('holdout_fit', origin.name, sep='_')
 ho.dat.key <- paste('holdout_data', origin.name, sep='_')
+# trainer$getCache()$invalidate(ho.fit.key)
+# trainer$getCache()$invalidate(ho.dat.key)
+ho.fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=1)
 ho.fit <- trainer$getCache()$load(ho.fit.key, function(){
-  trainer$holdout(lapply(models.xgb, function(m) m$model), d.tr$X, d.tr$y, d.ho$X, d.ho$y, fold.data.gen, ho.dat.key) 
+  ho.models <<- list()
+  for (m in names(models.def)){
+    for (m.fun in models.def[[m]]){
+      ho.models[[m.fun$model$name]] <<- m.fun$model
+    }
+  }
+  trainer$holdout(ho.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, ho.fold.data.gen, ho.dat.key) 
 })
 
 # Look at selected features
-ho.fit[[top.model]]$fit$finalModel$xNames
+ho.fit.top <- ho.fit[top.model.names]
+ho.fit.top[[1]]$fit$top.feats
 
-ho.res <- SummarizeTrainingResults(list(ho.fit), T, model.summary=ResSummaryFun('roc'))
+ho.res <- SummarizeTrainingResults(list(ho.fit.top), T, model.summary=ResSummaryFun('roc'))
 ho.perf.key <- paste('ho_model_perf', origin.name, sep='_')
 RESULT_CACHE$store(ho.perf.key, ho.res)
 # ho.res <- RESULT_CACHE$load('ho_model_perf_wmostfreqorigin')

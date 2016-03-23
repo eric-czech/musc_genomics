@@ -128,17 +128,22 @@ FilteringDataSummarizer <- function(){
   }
 }
 
-TransformOriginSolidLiquid <- function(origin){
-  ifelse(origin == 'HAEMATOPOIETIC_AND_LYMPHOID_TISSUE', 0, 1)
-}
+TransformOriginSolidLiquid <- list(
+  convert = function(origin){
+    ifelse(origin == 'HAEMATOPOIETIC_AND_LYMPHOID_TISSUE', 0, 1)
+  }, 
+  max.val = 1
+)
 
-TransformOriginMostFrequent <- function(origin){
-  sapply(origin, function(x){
-    if (x == 'HAEMATOPOIETIC_AND_LYMPHOID_TISSUE') 1
-    else if (x == 'LUNG') 2
-    else if (x == 'BREAST') 3
-    else if (x == 'CENTRAL_NERVOUS_SYSTEM') 4
-    else if (x == 'SKIN') 5
-    else 0
-  })
-}
+TransformOriginMostFrequent <- list(
+  convert = function(origin){
+    sapply(origin, function(x){
+      if (x == 'HAEMATOPOIETIC_AND_LYMPHOID_TISSUE') 1
+      else if (x == 'LUNG') 2
+      else if (x == 'BREAST') 3
+      else if (x == 'CENTRAL_NERVOUS_SYSTEM') 4
+      else if (x == 'SKIN') 5
+      else 0
+    })
+  }, max.val = 5
+)
