@@ -15,6 +15,7 @@ source('data_model/training_viz.R')
 source('data_model/filtering_lib.R')
 source('~/repos/portfolio/functional/ml/R/trainer.R')
 source('~/repos/portfolio/functional/ml/R/results.R')
+source('data_model/filtering_models.R')
 lib('MASS')
 lib('caret')
 lib('doMC')
@@ -85,6 +86,7 @@ GetPrepFun <- function(origin.transform=NULL){
   }
 }
 
+
 GetFilterModel <- function(name, max.feats, n.core=3, 
                            origin.transform=NULL, ...){
   prep.fun <- GetPrepFun(origin.transform)
@@ -112,12 +114,13 @@ GetFilterModel <- function(name, max.feats, n.core=3,
       y <- d$y.train.bin
       fit <- train(X, y, ...)
       fit$top.feats <- top.feats
-      fit
+      trim_model(fit) # Remove massive, embedded '.Environment' attributes
     }
   )
 }
 
-GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, origin.transform=NULL, origin.name=NULL, ...){
+GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, allow.parallel=T, 
+                                 origin.transform=NULL, origin.name=NULL, ...){
   if (is.null(origin.name))
     origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
   name <- sprintf('%s.%s.%s', model.name, max.feats, origin.name)
@@ -129,9 +132,41 @@ GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, origin.tr
     trControl=trainControl(
       method='cv', number=k, classProbs=T, 
       returnData=F, savePredictions='final',
-      allowParallel=T, verboseIter=F
+      allowParallel=allow.parallel, verboseIter=F
     )
   )
+}
+
+GetEnsembleModelForTransform <- function(max.feats, sub.models, model.name, method='glm', 
+                                         origin.transform=NULL, origin.name=NULL, ...){
+  if (is.null(origin.name))
+    origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
+  name <- sprintf('%s.%s.%s', model.name, max.feats, origin.name)
+  prep.fun <- GetPrepFun(origin.transform)
+  pred.fun <- function(fit, d, i){ 
+    X <- d$X.test[, fit$top.feats] %>% prep.fun
+    tryCatch({
+    list(
+      prob=predict(fit, X, type='prob'), 
+      class=predict(fit, X, type='raw')
+    )
+    }, error=function(e) browser())
+  }
+  fit.prep.fun <- function(fit, model.results){
+    fit$top.feats <- model.results[[1]]$top.feats
+    fit
+  }
+  res <- c(
+    list(name=name, predict=pred.fun, test=bin.test),
+    GetFitEnsembleTrain(
+      sub.models, fit.prep.fun=fit.prep.fun, 
+      method=method, metric='Accuracy', trControl=trainControl(
+        method='none', number=1, 
+        classProbs=T, savePredictions='final', returnData=T
+      )
+    ) 
+  )
+  res
 }
 
 
@@ -140,13 +175,12 @@ GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, origin.tr
 # origin.transform <- NULL
 # origin.transform <- TransformOriginSolidLiquid
 origin.trans <- TransformOriginMostFrequent
-#n.feats <- c(c(2,3,4), seq(5, 100, by=5), c(150, 200, 500))
-n.feats <- c(c(2,3,4,5), seq(10, 50, by=10))
+n.feats <- c(c(2,3,4,5,6,7,8,9), seq(10, 50, by=10))
+#n.feats <- c(c(2))
 origin.name <- 'wmostfreqorigin'
 
 
 get.model.definition <- function(...){
-  arg.list <- list(...)
   lapply(n.feats, function(x){ 
     list(model=GetModelForTransform(x, ...), max.feats=x)
   })
@@ -173,23 +207,57 @@ models.def$etree <- get.model.definition(
   'etree', n.core=1, origin.transform=origin.trans, origin.name=origin.name,
   method='extraTrees', tuneLength=4, preProcess='zv'
 )
-
+models.def$nnet <- get.model.definition(
+  'nnet', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  method='nnet', tuneLength=6, preProcess='zv', trace=F
+)
 # This requires too much memory (and performs poorly)
-# models.def$mars <- get.model.definition(
-#   'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
-#   method='earth', tuneLength=6, preProcess='zv'
+models.def$mars <- get.model.definition(
+  'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  method='earth', tuneLength=6, preProcess=c('zv', 'center', 'scale')
+)
+
+env <- new.env()
+load('/home/eczech/genomics_data_cache/filtering_data.ga/cosmic/model_mars_2_wmostfreqorigin.Rdata', envir=env)
+
+# Takes too long
+# models.def$ensavg <- get.model.definition(
+#   'ensavg', n.core=6, origin.transform=origin.trans, origin.name=origin.name, allow.parallel=F,
+#   method=m.ens.avg, tuneLength=1, preProcess='zv'
 # )
 
 
 ec <- T
-models <- lapply(names(models.def), function(m){
-  model <- models.def[[m]]
-  lapply(model, function(m.part){ 
-    trainer$train(m.part$model, enable.cache=ec)
-  }) %>% setNames(sapply(model, function(m) m$model$name))
-}) %>% setNames(names(models.def))
+get.trained.models <- function(models.def){
+  lapply(names(models.def), function(m){
+    model <- models.def[[m]]
+    lapply(model, function(m.part){ 
+      trainer$train(m.part$model, enable.cache=ec)
+    }) %>% setNames(sapply(model, function(m) m$model$name))
+  }) %>% setNames(names(models.def))
+}
+models <- get.trained.models(models.def)
 
-cv.res.model <- 'etree'
+
+get.ens.model.definition <- function(name, sub.models, ...){
+  lapply(n.feats, function(x){ 
+    feat.ct.models <- GetModelsByFeatCount(sub.models, x, origin.name)
+    list(model=GetEnsembleModelForTransform(x, feat.ct.models, name, ...), max.feats=x)
+  })
+}
+  #GetEnsembleModelForTransform <- function(max.feats, model.name, sub.models, origin.transform=NULL, origin.name=NULL, ...){
+sub.models <- models[c('svm', 'rf', 'enet')]
+ens.models.def <- list()
+ens.models.def$ensglm <- get.ens.model.definition(
+  'ensglm', sub.models, method='glm', origin.transform=origin.trans, origin.name=origin.name
+)
+ens.models.def$ensavg <- get.ens.model.definition(
+  'ensavg', sub.models, method=GetEnsembleAveragingModel(), origin.transform=origin.trans, origin.name=origin.name
+)
+ens.models <- get.trained.models(ens.models.def)
+for (m in names(ens.models)) models[[m]] <- ens.models[[m]]
+  
+cv.res.model <- 'ensavg'
 cv.res <- SummarizeTrainingResults(
   models[[cv.res.model]], T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
@@ -200,11 +268,14 @@ RESULT_CACHE$store(cv.perf.key, cv.res)
 
 PlotFoldConfusion(cv.res)
 PlotFoldMetric(cv.res, 'acc')
-PlotFoldMetric(cv.res, 'cacc')
 PlotFoldMetric(cv.res, 'kappa')
 PlotFoldMetric(cv.res, 'nir')
 PlotFoldMetric(cv.res, 'auc')
 PlotFoldMetric(cv.res, 'mcp')
+PlotFoldMetric(cv.res, 'ptp')
+PlotFoldMetric(cv.res, 'cacc') +
+  ggtitle(sprintf('%s %s Accuracy Over Baseline', toupper(RESPONSE_TYPE), cv.res.model)) + 
+  ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/cacc_%s.png', RESPONSE_TYPE, cv.res.model))
 
 # Look at selected feature frequencies
 top.model <- 'svm.10.wmostfreqorigin'
@@ -214,20 +285,14 @@ lapply(models$svm[[top.model]], function(m) m$fit$top.feats) %>% unlist %>% tabl
 ##### Top Feature Subset Accuracies #####
 
 top.feat.ct <- 10
-top.subset <- sprintf('%s.%s', top.feat.ct, origin.name)
-all.model.names <- unlist(lapply(names(models), function(m) names(models[[m]])))
-top.model.names <- all.model.names[all.model.names %>% str_detect(top.subset)]
-top.models <- foreach(m=names(models)) %do% {
-  best.subset <- names(models[[m]])[names(models[[m]]) %in% top.model.names]
-  if (length(best.subset) != 1 || sum(is.na(best.subset)) > 0)
-    stop('Failed to find best subset model')
-  models[[m]][[best.subset]]
-} %>% setNames(names(models))
+top.models <- GetModelsByFeatCount(models, top.feat.ct, origin.name)
 
 top.model.res <- SummarizeTrainingResults(
   top.models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
-PlotFoldMetric(top.model.res, 'cacc')
+PlotFoldMetric(top.model.res, 'cacc') + 
+  ggtitle(sprintf('%s Accuracy Over Baseline w/ %s Features', toupper(RESPONSE_TYPE), top.feat.ct)) + 
+  ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/cacc_%s_feats.png', RESPONSE_TYPE, top.feat.ct))
 
 ##### Holdout Fit #####
 
@@ -250,12 +315,13 @@ ho.fit <- trainer$getCache()$load(ho.fit.key, function(){
 ho.fit.top <- ho.fit[top.model.names]
 ho.fit.top[[1]]$fit$top.feats
 
-ho.res <- SummarizeTrainingResults(list(ho.fit.top), T, model.summary=ResSummaryFun('roc'))
+ho.res <- SummarizeTrainingResults(list(ho.fit.top), T, model.summary=ResSummaryFun('lift'))
 ho.perf.key <- paste('ho_model_perf', origin.name, sep='_')
 RESULT_CACHE$store(ho.perf.key, ho.res)
 # ho.res <- RESULT_CACHE$load('ho_model_perf_wmostfreqorigin')
 
 PlotHoldOutConfusion(ho.res)
+PlotHoldOutLift(ho.res)
 PlotHoldOutMetric(ho.res, 'auc') 
 PlotHoldOutMetric(ho.res, 'acc') 
 PlotHoldOutMetric(ho.res, 'cacc') 
@@ -264,8 +330,8 @@ PlotHoldOutMetric(ho.res, 'mcp')
 
 ##### Calibration #####
 
-#cal.data <- cv.res$predictions
-cal.data <- ho.res$predictions
+cal.data <- cv.res$predictions
+#cal.data <- ho.res$predictions
 cal.data %>% group_by(model) %>% do({
   d <- .
   p <- seq(0, 1, by=.1)
