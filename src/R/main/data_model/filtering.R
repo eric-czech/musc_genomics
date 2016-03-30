@@ -257,7 +257,7 @@ ens.models.def$ensavg <- get.ens.model.definition(
 ens.models <- get.trained.models(ens.models.def)
 for (m in names(ens.models)) models[[m]] <- ens.models[[m]]
   
-cv.res.model <- 'ensavg'
+cv.res.model <- 'rf'
 cv.res <- SummarizeTrainingResults(
   models[[cv.res.model]], T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
