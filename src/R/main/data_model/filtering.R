@@ -175,7 +175,7 @@ GetEnsembleModelForTransform <- function(max.feats, sub.models, model.name, meth
 # origin.transform <- NULL
 # origin.transform <- TransformOriginSolidLiquid
 origin.trans <- TransformOriginMostFrequent
-n.feats <- c(c(2,3,4,5,6,7,8,9), seq(10, 50, by=10))
+n.feats <- c(c(2,3,4,5,6,7,8,9), seq(10, 50, by=10), 100, 200, 300)
 #n.feats <- c(c(2))
 origin.name <- 'wmostfreqorigin'
 
@@ -211,14 +211,14 @@ models.def$nnet <- get.model.definition(
   'nnet', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
   method='nnet', tuneLength=6, preProcess='zv', trace=F
 )
-# This requires too much memory (and performs poorly)
-models.def$mars <- get.model.definition(
-  'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
-  method='earth', tuneLength=6, preProcess=c('zv', 'center', 'scale')
-)
 
-env <- new.env()
-load('/home/eczech/genomics_data_cache/filtering_data.ga/cosmic/model_mars_2_wmostfreqorigin.Rdata', envir=env)
+# models.def$mars <- get.model.definition(
+#   'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+#   method='earth', tuneLength=6, preProcess=c('zv', 'center', 'scale')
+# )
+
+# env <- new.env()
+# load('/home/eczech/genomics_data_cache/filtering_data.ga/cosmic/model_mars_2_wmostfreqorigin.Rdata', envir=env)
 
 # Takes too long
 # models.def$ensavg <- get.model.definition(
