@@ -193,6 +193,7 @@ GetResultSummary <- function(d, curve.type='lift'){
   # Extract desired measures
   auc <- performance(pred, 'auc')
   kappa <- as.numeric(cmat$overall['Kappa'])
+  ptp <- coalesce(as.numeric(cmat$overall['AccuracyPValue']), 1)
   mcp <- coalesce(as.numeric(cmat$overall['McnemarPValue']), 1)
   acc <- as.numeric(cmat$overall['Accuracy'])
   nir <- sum(d$y.test == 'neg') / length(d$y.test)
@@ -225,7 +226,7 @@ GetResultSummary <- function(d, curve.type='lift'){
   res <- data.frame(
     x=curve@x.values[[1]], y=curve@y.values[[1]], 
     t=curve@alpha.values[[1]], auc=auc@y.values[[1]],
-    acc=acc, bacc=bacc, spec=spec, sens=sens, kappa=kappa, mcp=mcp,
+    acc=acc, bacc=bacc, spec=spec, sens=sens, kappa=kappa, mcp=mcp, ptp=ptp,
     cacc=cacc, nir=nir, len=length(d$y.test)
   ) %>% cbind(cts)
   #   res <- cbind(res, margin.stats)
