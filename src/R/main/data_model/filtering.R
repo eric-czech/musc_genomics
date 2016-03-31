@@ -137,12 +137,13 @@ GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, origin.tr
 
 # Static settings
 
-# origin.transform <- NULL
+origin.transform <- NULL
 # origin.transform <- TransformOriginSolidLiquid
-origin.trans <- TransformOriginMostFrequent
+# origin.trans <- TransformOriginMostFrequent
 #n.feats <- c(c(2,3,4), seq(5, 100, by=5), c(150, 200, 500))
 n.feats <- c(c(2,3,4,5), seq(10, 50, by=10))
-origin.name <- 'wmostfreqorigin'
+#origin.name <- 'wmostfreqorigin'
+origin.name <- 'norigin'
 
 
 get.model.definition <- function(...){
@@ -154,32 +155,35 @@ get.model.definition <- function(...){
 
 models.def <- list()
 models.def$svm <- get.model.definition(
-  'svm', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  'svm', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
   method='svmRadial', tuneLength=20, preProcess='zv'
 )
 models.def$enet <- get.model.definition(
-  'enet', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  'enet', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
   method='glmnet', tuneLength=20, preProcess='zv'
 )
-models.def$xgb <- get.model.definition(
-  'xgb', n.core=1, origin.transform=origin.trans, origin.name=origin.name,
-  method='xgbTree', tuneLength=8, preProcess='zv'
+# models.def$xgb <- get.model.definition(
+#   'xgb', n.core=1, origin.transform=origin.trans, origin.name=origin.name,
+#   method='xgbTree', tuneLength=8, preProcess='zv'
+# )
+models.def$gbm <- get.model.definition(
+  'gbm', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
+  method='gbm', tuneLength=8, preProcess='zv', verbose=F
 )
 models.def$rf <- get.model.definition(
-  'rf', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  'rf', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
   method='rf', tuneLength=4, preProcess='zv'
 )
-models.def$etree <- get.model.definition(
-  'etree', n.core=1, origin.transform=origin.trans, origin.name=origin.name,
-  method='extraTrees', tuneLength=4, preProcess='zv'
-)
+# models.def$etree <- get.model.definition(
+#   'etree', n.core=1, origin.transform=origin.trans, origin.name=origin.name,
+#   method='extraTrees', tuneLength=4, preProcess='zv'
+# )
 
 # This requires too much memory (and performs poorly)
 # models.def$mars <- get.model.definition(
 #   'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
 #   method='earth', tuneLength=6, preProcess='zv'
 # )
-
 
 ec <- T
 models <- lapply(names(models.def), function(m){
@@ -200,7 +204,7 @@ RESULT_CACHE$store(cv.perf.key, cv.res)
 
 PlotFoldConfusion(cv.res)
 PlotFoldMetric(cv.res, 'acc')
-PlotFoldMetric(cv.res, 'cacc')
+PlotFoldMetric(cv.res, 'cacc') 
 PlotFoldMetric(cv.res, 'kappa')
 PlotFoldMetric(cv.res, 'nir')
 PlotFoldMetric(cv.res, 'auc')
@@ -227,7 +231,9 @@ top.models <- foreach(m=names(models)) %do% {
 top.model.res <- SummarizeTrainingResults(
   top.models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
-PlotFoldMetric(top.model.res, 'cacc')
+PlotFoldMetric(top.model.res, 'cacc') + 
+  ggtitle(sprintf('Accuracy Over Baseline w/ %s Features', top.feat.ct)) +
+  ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/cacc_%s_feats.png', top.feat.ct))
 
 ##### Holdout Fit #####
 
