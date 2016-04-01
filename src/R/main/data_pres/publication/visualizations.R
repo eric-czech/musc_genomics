@@ -25,7 +25,6 @@ GeneratePerfProfileVis <- function(
     img.dir='~/repos/musc_genomics/src/R/main/data_pres/images/publication/genomics_conf',
     ignore.models=c('nnet')
   ){
-  
   model.trans <- GetModelNameTransform()
   d.plt <- cv.res.all %>% 
     filter(n.feats > 0 & (!model %in% ignore.models)) %>%

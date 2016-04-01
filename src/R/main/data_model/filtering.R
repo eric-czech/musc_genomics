@@ -366,7 +366,7 @@ for (m in names(ens.models)) models[[m]] <- ens.models[[m]]
 ##### Performance #####
 
 # Create visualizations for genomics conference
-cv.res.all %>% filter(model != 'pam' | n.feats > 5) %>% GeneratePerfProfileVis(RESPONSE_TYPE)
+perf.plots <- cv.res.all %>% filter(model != 'pam' | n.feats > 5) %>% GeneratePerfProfileVis(RESPONSE_TYPE)
 
     
 cv.res.model <- 'ensglm'
