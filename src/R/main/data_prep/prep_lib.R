@@ -41,7 +41,7 @@ PrepareMutation <- function(d, gene){
 }
 
 RemoveRareMutations <- function(d, c.mu, min.mutations=3){
-  rare.mutations <- which(apply(d[,c.mu], 2, sum) < min.mutations)
+  rare.mutations <- which(apply(d[, c.mu], 2, sum) < min.mutations)
   if (length(rare.mutations) == 0) d
   else d %>% select(-one_of(c.mu[rare.mutations]))
 }

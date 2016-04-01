@@ -56,16 +56,33 @@ GetTrainingData <- function(cache, response.type, response.selector, min.mutatio
     d <- d$data
     
     d.prep <- response.selector(d) %>%
-      Filter(function(x)!all(is.na(x)), .) %>%         # Remove NA-only columns
-      RemoveNA(row.threshold=.1) %>%                   # Remove rows with large % NA's
-      RemoveRareMutations(c.mu, min.mutations) %>% # Remove cols for rare mutations
-      mutate(response=ScaleVector(response))           # Scale response
+      Filter(function(x)!all(is.na(x)), .) %>%      # Remove NA-only columns
+      RemoveNA(row.threshold=.1) %>%                # Remove rows with large % NA's
+      RemoveRareMutations(c.mu, min.mutations) %>%  # Remove cols for rare mutations
+      mutate(response=ScaleVector(response))        # Scale response
     
     if (any(is.na(d.prep)))
       stop('Dataset contains unexpected NA values')
     d.prep
   }
   cache$load(sprintf('data_prep_02_%s', response.type), loader)
+}
+
+GetPredictionData <- function(cache, response.type, response.selector, cols){
+  loader <- function(){
+    d <- GetPreparedData(cache)
+    
+    d.prep <- response.selector(d$data) %>%
+      select(one_of(cols)) %>%
+      RemoveNA(row.threshold=.1)
+    
+    if (any(is.na(d.prep %>% select(-response)))){
+      stop('Dataset contains unexpected NA values')
+      browser()
+    }
+    d.prep
+  }
+  cache$load(sprintf('data_predict_02_%s', response.type), loader)
 }
 
 DichotomizeOutcome <- function(y, threshold) {
@@ -180,9 +197,12 @@ GetDataSummarizer <- function(){
 }
 
 #RESULT_METRICS <- c('auc', 'acc', 'tpr', 'tnr')
-ResSummaryFun <- function(curve.type='roc') function(d) GetResultSummary(d, curve.type=curve.type)
+ResSummaryFun <- function(curve.type='roc') function(d) {
+  GetResultSummary(d, curve.type=curve.type)
+}
+
 GetResultSummary <- function(d, curve.type='lift'){
-  
+
   # Create performance measures
   pred <- prediction(d$y.pred.prob, d$y.test)
   cmat <- confusionMatrix(d$y.pred.class, d$y.test, positive='pos')

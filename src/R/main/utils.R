@@ -35,6 +35,7 @@ SELECTION_THRESH <- NULL
 EnableCosmic <- function(res.type='cosmic'){
   RESPONSE_TYPE <<- res.type 
   RESPONSE_SELECTOR <<- function(d){d %>% filter(!is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
+  PREDICTION_SELECTOR <<- function(d){d %>% filter(is.na(ic_50)) %>% rename(response=ic_50) %>% select(-auc)}
   RESPONSE_THRESH <<- -1 
   SELECTION_THRESH <<- .001
 }
@@ -42,6 +43,7 @@ EnableCosmic <- function(res.type='cosmic'){
 EnableCtd <- function(res.type='ctd'){
   RESPONSE_TYPE <<- res.type
   RESPONSE_SELECTOR <<- function(d){d %>% filter(!is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
+  PREDICTION_SELECTOR <<- function(d){d %>% filter(is.na(auc)) %>% rename(response=auc) %>% select(-ic_50)}
   RESPONSE_THRESH <<- -1
   SELECTION_THRESH <<- .0001
 }

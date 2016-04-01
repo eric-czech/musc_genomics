@@ -14,8 +14,6 @@ GetFitEnsembleTrain <- function(model.results, fit.prep.fun=NULL, ...){
 }
 
 
-
-
 .GetAvgFilterEnsemble <- function(){
   caret.list.args <- list(
     trControl=trainControl(

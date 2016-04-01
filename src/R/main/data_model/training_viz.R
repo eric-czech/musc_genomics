@@ -4,6 +4,8 @@ lib('stringr')
 lib('ggplot2')
 lib('reshape2')
 
+
+
 GetCVScalarStats <- function(cv.res){
   cv.res$fold.summary %>% group_by(model, fold) %>%
     summarise_each(funs(head(., 1)), -model) %>% ungroup
@@ -183,5 +185,54 @@ PlotResponseDist <- function(response.type, response.data, response.cutoff=0){
     geom_density(aes(y=.15 * ..count..)) + theme_bw() + 
     geom_vline(aes(xintercept=response.cutoff)) + 
     ggtitle(sprintf('%s Response Distribution', response.type)) 
+}
+
+
+#' @title Aggregate CV results across models and feature subset sizes
+#' @return data frame containing model name, number of features, and performance metrics
+GetAggregateFilterCVRes <- function(models, metrics=c('kappa', 'cacc', 'acc')){
+  cv.res.all <- foreach(m=names(models), .combine=rbind)%dopar%{
+    loginfo('Processing model type %s', m)
+    cv.res <- SummarizeTrainingResults(
+      models[[m]], T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
+    )
+    GetCVScalarStats(cv.res) %>% select(one_of(metrics), fold, model) %>%
+      rename(model.name=model) %>%
+      mutate(
+        n.feats=as.numeric(str_extract(model.name, '(?<=\\.).*?(?=\\.)')), 
+        model=str_extract(model.name, '.*?(?=\\.)')
+      )
+  }
+  n.fold <- length(models[[1]][[1]])
+  is.valid <- cv.res.all %>% group_by(model, n.feats) %>% tally %>% .$n %>% unique == n.fold
+  if (!is.valid) stop(sprintf(
+    'CV result aggregation produced incorrect number of fold results per model (expecting %s)', n.fold
+  ))
+  cv.res.all
+}
+
+
+#' @title Plots performance profile over number of features included in an arbitrary model set
+#' @param cv.res.agg results from \link{GetAggregateFilterCVRes}
+#' @param metric performance metric to plot profile over
+#' @return ggplot 
+#' @seealso 
+PlotFeatureCountProfile <- function(cv.res.agg, metric){
+  n.feat.all <- sort(unique(cv.res.agg$n.feats))
+  cv.res.agg %>% 
+    rename_(value=metric) %>%
+    group_by(model, n.feats) %>% mutate(mean_value=mean(value)) %>% ungroup %>%
+    mutate(i.feats=factor(n.feats, ordered=T)) %>% 
+    ggplot + 
+    geom_line(aes(x=as.integer(i.feats), y=mean_value, color=model), alpha=.3) +
+    geom_smooth(aes(x=as.integer(i.feats), y=mean_value), method='loess', level=1-1E-9) +
+    scale_x_continuous(labels=as.character(n.feat.all), breaks=1:length(n.feat.all)) +
+    scale_color_discrete(guide=guide_legend(title='Model Name')) + 
+    theme_bw() + theme(
+      panel.grid.minor=element_blank(), 
+      panel.grid.major.y = element_blank(),
+      panel.grid.major.x = element_line(size=.1)
+    )
+    #theme(panel.grid.minor=element_blank(), panel.grid.major=element_blank())
 }
 

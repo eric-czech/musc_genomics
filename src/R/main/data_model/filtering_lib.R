@@ -149,11 +149,11 @@ TransformOriginMostFrequent <- list(
 )
 
 GetModelsByFeatCount <- function(models, feat.ct, origin.name){
-  m.subset <- sprintf('%s.%s', feat.ct, origin.name)
+  m.subset <- sprintf('\\.%s\\.%s', feat.ct, origin.name)
   all.model.names <- unlist(lapply(names(models), function(m) names(models[[m]])))
   sub.model.names <- all.model.names[all.model.names %>% str_detect(m.subset)]
   if (length(sub.model.names) == 0)
-    stop('Failed to find models matching top feat count')
+    stop(sprintf('Failed to find models matching top feat count %s', feat.ct))
   top.models <- foreach(m=names(models)) %do% {
     m.subset <- names(models[[m]])[names(models[[m]]) %in% sub.model.names]
     if (length(m.subset) != 1 || sum(is.na(m.subset)) > 0)
