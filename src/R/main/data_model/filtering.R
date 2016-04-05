@@ -15,6 +15,7 @@ source('data_model/training_viz.R')
 source('data_model/filtering_lib.R')
 source('~/repos/portfolio/functional/ml/R/trainer.R')
 source('~/repos/portfolio/functional/ml/R/results.R')
+source('~/repos/portfolio/functional/ml/R/caret_decorators.R')
 source('data_model/filtering_models.R')
 source('data_pres/publication/visualizations.R')
 lib('MASS')
@@ -27,8 +28,8 @@ lib('plotly')
 SEED <- 1024
 
 ## Choose dataset to use for modeling (must pick one of the following)
-#EnableCosmic()
-EnableCtd()
+EnableCosmic()
+#EnableCtd()
 
 # TRAINER_DATA_DIRNAME <- 'filtering_data'
 TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
@@ -47,6 +48,12 @@ select <- dplyr::select
 
 # Load training data for this response type
 d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
+
+# Frequency of origin
+# table(TransformOriginMostFrequent$convert(d.prep[,'origin'])) %>% prop.table
+
+# Frequency of response
+# table(DichotomizeOutcome(d.prep[,'response'], RESPONSE_THRESH))
 
 # Load a dataset equivalent to the above but with missing response labels (ultimately to be predicted)
 d.predict <- GetPredictionData(TRAIN_CACHE, RESPONSE_TYPE, PREDICTION_SELECTOR, names(d.prep))
@@ -103,7 +110,7 @@ GetRandVars <- function(n){
 }
 
 GetFilterModel <- function(name, max.feats, n.core=3, 
-                           origin.transform=NULL, ...){
+                           origin.transform=NULL, weight.fun=NULL, ...){
   prep.fun <- GetPrepFun(origin.transform)
   pred.fun <- function(fit, d, i){ 
     X.test <- d$X.test
@@ -138,7 +145,11 @@ GetFilterModel <- function(name, max.feats, n.core=3,
       X <- prep.fun(X.train[,top.feats, drop=F])
       y <- d$y.train.bin
       
-      fit <- train(X, y, ...)
+      weights <- NULL
+      if (!is.null(weight.fun))
+        weights <- weight.fun(y)
+      
+      fit <- train(X, y, weights=weights, ...)
       fit$top.feats <- top.feats
       trim_model(fit) # Remove massive, embedded '.Environment' attributes
     }
@@ -146,13 +157,14 @@ GetFilterModel <- function(name, max.feats, n.core=3,
 }
 
 GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, allow.parallel=T, 
-                                 origin.transform=NULL, origin.name=NULL, ...){
+                                 origin.transform=NULL, origin.name=NULL, weight.fun=NULL, ...){
   if (is.null(origin.name))
     origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
   name <- sprintf('%s.%s.%s', model.name, max.feats, origin.name)
   GetFilterModel(
     name, max.feats, n.core=n.core,
     origin.transform=origin.transform,
+    weight.fun=weight.fun,
     metric='Accuracy', 
     ...,
     trControl=trainControl(
@@ -163,7 +175,7 @@ GetModelForTransform <- function(max.feats, model.name, n.core=3, k=5, allow.par
   )
 }
 
-GetEnsembleModelForTransform <- function(max.feats, sub.models, model.name, method='glm', 
+GetEnsembleModelForTransform <- function(max.feats, sub.models, model.name, n.core=1, method='glm', 
                                          origin.transform=NULL, origin.name=NULL, ...){
   if (is.null(origin.name))
     origin.name <- ifelse(is.null(origin.transform), 'norigin', 'worigin')
@@ -189,7 +201,7 @@ GetEnsembleModelForTransform <- function(max.feats, sub.models, model.name, meth
   res <- c(
     list(name=name, predict=pred.fun, test=bin.test),
     GetFitEnsembleTrain(
-      sub.models, fit.prep.fun=fit.prep.fun, 
+      sub.models, fit.prep.fun=fit.prep.fun, n.core=n.core,
       method=method, metric='Accuracy', trControl=trainControl(
         method='none', number=1, 
         classProbs=T, savePredictions='final', returnData=T
@@ -206,8 +218,7 @@ GetEnsembleModelForTransform <- function(max.feats, sub.models, model.name, meth
 # origin.trans <- TransformOriginSolidLiquid
 origin.trans <- TransformOriginMostFrequent
 n.feats <- c(c(0,1,2,3,4,5,6,7,8,9), seq(10, 50, by=10), 100, 200, 300)
-#n.feats <- c(0, 1, 3, 10, 20, 50, 100)
-#n.feats <- c(0,1,2,3)
+#n.feats <- c(40)
 #n.feats <- c(c(2))
 origin.name <- 'wmostfreqorigin'
 
@@ -220,11 +231,16 @@ get.model.definition <- function(...){
 models.def <- list()
 models.def$svm <- get.model.definition(
   'svm', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
-  method='svmRadial', tuneLength=20, preProcess='zv'
+  method=GetFilteringSVMModel(), tuneLength=20, preProcess='zv', tol=1
 )
 models.def$enet <- get.model.definition(
   'enet', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
   method='glmnet', tuneLength=20, preProcess='zv'
+)
+models.def$enetwt <- get.model.definition(
+  'enetwt', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
+  weight.fun=function(y) ifelse(y == 'pos', 3, 1),
+  method='glmnet', tuneLength=10, preProcess='zv'
 )
 models.def$xgb <- get.model.definition(
   'xgb', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
@@ -267,8 +283,13 @@ models.def$pam <- get.model.definition(
 )
 models.def$scrda <- get.model.definition(
   'scrda', n.core=3, origin.transform=origin.trans, origin.name=origin.name,
-  method=GetSCRDAModel(5), tuneLength=5,
+  method=GetSCRDAModel(5), 
+  tuneLength=5,
   preProcess=c('zv', 'center', 'scale')
+)
+models.def$mars <- get.model.definition(
+  'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
+  method='earth', tuneLength=6, preProcess=c('zv', 'center', 'scale')
 )
 
 # models.def$hdrda <- get.model.definition(
@@ -278,10 +299,7 @@ models.def$scrda <- get.model.definition(
 # )
 # Add knn, lda, mda, pam, sda
 
-# models.def$mars <- get.model.definition(
-#   'mars', n.core=8, origin.transform=origin.trans, origin.name=origin.name,
-#   method='earth', tuneLength=6, preProcess=c('zv', 'center', 'scale')
-# )
+
 
 # env <- new.env()
 # load('/home/eczech/genomics_data_cache/filtering_data.ga/cosmic/model_mars_2_wmostfreqorigin.Rdata', envir=env)
@@ -298,14 +316,15 @@ get.trained.models <- function(models.def){
     model <- models.def[[m]]
     lapply(model, function(m.part){ 
       if (m == 'pls' && m.part$max.feats == 1){
-        logdebug('Skipping PLS with max feats 1 since it seems to get stuck indefinitely')
+        loginfo('Skipping PLS with max feats 1 since it seems to get stuck indefinitely')
         return(NULL)
       }
         
+      #trainer$train(m.part$model, enable.cache=ec)
       tryCatch({
-        trainer$train(m.part$model, enable.cache=ec)  
+        trainer$train(m.part$model, enable.cache=ec)
       }, error=function(e){
-        logerror('Ignoring model %s for feature count %s due to error', m, m.part$max.feats)
+        loginfo('Ignoring model %s for feature count %s due to error', m, m.part$max.feats)
         return(NULL)
       })
     }) %>% setNames(sapply(model, function(m) m$model$name)) %>% .[!sapply(., is.null)]
@@ -313,32 +332,42 @@ get.trained.models <- function(models.def){
 }
 models <- get.trained.models(models.def)
 
+# Make sure no NA's were allowed in prediction matrixes attached to caret fits
+ValidatePredictions(models)
+
 # Create performance summary over all models (will be used for visualization was well as ensemble selection)
 registerDoMC(3)
 cv.res.all <- GetAggregateFilterCVRes(models)
 
+# GenerateErrorProfileVis(cv.res.all)
+
 ##### Ensemble Selection #####
 
 model.perf <- cv.res.all %>% select(model, fold, kappa, n.feats)
-model.cor <- model.perf %>% group_by(n.feats) %>% do({
+model.cor <- model.perf %>% filter(n.feats == 20) %>% group_by(n.feats) %>% do({
   d <- .
   cor.mat <- dcast(d , fold ~ model, value.var='kappa') %>% select(-fold)
   cor.mat <- suppressWarnings(cor(cor.mat) %>% melt() %>% setNames(c('m1', 'm2', 'cor')))
   cor.mat <- cor.mat %>% filter(m1 != m2) %>% mutate(cor=ifelse(is.na(cor), 1, cor))
   cor.mat <- cor.mat %>% mutate(m1=as.character(m1), m2=as.character(m2))
   cor.mat
-})
+}) %>% ungroup
 
 model.cor %>% group_by(m1, m2) %>% 
-  summarise(cor=mean(cor)) %>% 
-  mutate(cor=cut(cor, breaks=2)) %>%
+  summarise(cor=mean(cor)) %>% ungroup %>%
+  mutate(cor=cut(cor, breaks=3)) %>%
   ggplot(aes(x=m1, y=m2, fill=cor)) + geom_tile() + 
-  scale_fill_manual(values = c("green", "red"))
+  scale_fill_manual(values = c("green", "yellow", "red"), guide=guide_legend(title='Error Correlation')) + 
+  theme_bw() +
+  theme(panel.grid.minor=element_blank(), panel.grid.major=element_blank()) +
+  xlab('Model') + ylab('Model')
 
-cv.res.all %>% filter(n.feats==20) %>% group_by(model) %>% summarise(kappa=mean(kappa)) %>%
-  arrange(desc(kappa))
+cv.res.all %>% filter(n.feats==20) %>% group_by(model) %>% 
+  summarise(value=mean(cacc)) %>%
+  arrange(desc(value))
 
-ens.model.names <- c('rf', 'knn', 'pam', 'svm', 'xgb')
+#ens.model.names <- c('rf', 'knn', 'pam', 'svm', 'xgb')
+ens.model.names <- c('rf', 'scrda', 'svm')
 
 ##### Ensemble Training #####
 
@@ -354,10 +383,12 @@ if (any(is.na(names(sub.models))))
   stop('Failed to extract models for ensembling')
 ens.models.def <- list()
 ens.models.def$ensglm <- get.ens.model.definition(
-  'ensglm', sub.models, method='glm', origin.transform=origin.trans, origin.name=origin.name
+  'ensglm', sub.models, method='glm', origin.transform=origin.trans, 
+  origin.name=origin.name, n.core=3
 )
 ens.models.def$ensavg <- get.ens.model.definition(
-  'ensavg', sub.models, method=GetEnsembleAveragingModel(), origin.transform=origin.trans, origin.name=origin.name
+  'ensavg', sub.models, method=GetEnsembleAveragingModel(), origin.transform=origin.trans, 
+  origin.name=origin.name, n.core=3
 )
 ens.models <- get.trained.models(ens.models.def)
 for (m in names(ens.models)) models[[m]] <- ens.models[[m]]
@@ -368,8 +399,7 @@ for (m in names(ens.models)) models[[m]] <- ens.models[[m]]
 # Create visualizations for genomics conference
 perf.plots <- cv.res.all %>% filter(model != 'pam' | n.feats > 5) %>% GeneratePerfProfileVis(RESPONSE_TYPE)
 
-    
-cv.res.model <- 'ensglm'
+cv.res.model <- 'enetwt'
 cv.res <- SummarizeTrainingResults(
   models[[cv.res.model]], T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
@@ -391,38 +421,63 @@ PlotFoldMetric(cv.res, 'cacc') +
   ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/cacc_%s.png', RESPONSE_TYPE, cv.res.model))
 
 # Look at selected feature frequencies
-top.model <- 'svm.10.wmostfreqorigin'
-lapply(models$svm[[top.model]], function(m) m$fit$top.feats) %>% unlist %>% table %>%
-  as.data.frame %>% arrange(desc(Freq)) %>% setNames(c('feature', 'frequency'))
+top.model <- 'svm.20.wmostfreqorigin'
+top.feat.cv <- lapply(models$svm[[top.model]], function(m) m$fit$top.feats) %>% unlist %>% table %>%
+  as.data.frame %>% arrange(desc(Freq)) %>% setNames(c('feature', 'frequency')) 
+print(top.feat.cv, row.names=F)
+
+GenerateTopFeatVis(top.feat.cv) + ylim(-8, 5) + coord_flip()
+  
 
 ##### Top Feature Subset Accuracies #####
 
 top.feat.ct <- 20
+top.model.names <- GetModelNamesByFeatCount(models, top.feat.ct, origin.name)
 top.models <- GetModelsByFeatCount(models, top.feat.ct, origin.name)
 
 top.model.res <- SummarizeTrainingResults(
   top.models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
-PlotFoldMetric(top.model.res, 'kappa') + 
+PlotFoldMetric(top.model.res, 'cacc') + 
   ggtitle(sprintf('%s Accuracy Over Baseline w/ %s Features', toupper(RESPONSE_TYPE), top.feat.ct)) + 
   ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/cacc_%s_feats.png', RESPONSE_TYPE, top.feat.ct))
 
+PlotFoldMetric(top.model.res, 'kappa') + 
+  ggtitle(sprintf('%s Kappa w/ %s Features', toupper(RESPONSE_TYPE), top.feat.ct)) + 
+  ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/kappa_%s_feats.png', RESPONSE_TYPE, top.feat.ct))
+
+PlotFoldMetric(top.model.res, 'acc') + 
+  ggtitle(sprintf('%s Raw Accuracy w/ %s Features', toupper(RESPONSE_TYPE), top.feat.ct)) + 
+  ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/acc_%s_feats.png', RESPONSE_TYPE, top.feat.ct))
+
 ##### Holdout Fit #####
 
+ho.fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=1)
 ho.fit.key <- paste('holdout_fit', origin.name, sep='_')
 ho.dat.key <- paste('holdout_data', origin.name, sep='_')
 # trainer$getCache()$invalidate(ho.fit.key)
 # trainer$getCache()$invalidate(ho.dat.key)
-ho.fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=1)
-ho.fit <- trainer$getCache()$load(ho.fit.key, function(){
-  ho.models <<- list()
-  for (m in names(models.def)){
-    for (m.fun in models.def[[m]]){
-      ho.models[[m.fun$model$name]] <<- m.fun$model
-    }
-  }
-  trainer$holdout(ho.models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, ho.fold.data.gen, ho.dat.key) 
-})
+ho.fit <- RunHoldoutFit(trainer, models.def, d.tr, d.ho, ho.fit.key, ho.dat.key, ho.fold.data.gen)
+ho.models <- RestackHoldoutFit(ho.fit)
+
+###### Ensemble Holdout #####
+
+sub.models.ho <- ho.models[ens.model.names]
+if (any(is.na(names(sub.models.ho))))
+  stop('Failed to extract models for ensembling')
+ens.ho.models.def <- list()
+ens.ho.models.def$ensglm <- get.ens.model.definition(
+  'ensglm', sub.models.ho, method='glm', origin.transform=origin.trans, origin.name=origin.name
+)
+ens.ho.models.def$ensavg <- get.ens.model.definition(
+  'ensavg', sub.models.ho, method=GetEnsembleAveragingModel(), origin.transform=origin.trans, origin.name=origin.name
+)
+
+ens.ho.fit.key <- paste('holdout_fit_ens', origin.name, sep='_')
+# trainer$getCache()$invalidate(ens.ho.fit.key)
+ens.ho.fit <- RunHoldoutFit(trainer, ens.ho.models.def, d.tr, d.ho, ens.ho.fit.key, ho.dat.key, ho.fold.data.gen)
+
+
 
 # Look at selected features
 ho.fit.top <- ho.fit[top.model.names]

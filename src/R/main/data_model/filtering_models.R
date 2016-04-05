@@ -1,9 +1,20 @@
 
 
-GetFitEnsembleTrain <- function(model.results, fit.prep.fun=NULL, ...){
+
+GetFilteringSVMModel <- function(){
+  m <- Decorate.Classifier.NAPredictions('svmRadial', c('pos', 'neg'))
+  m$method <- 'svmRadial'
+  m
+}
+
+GetFitEnsembleTrain <- function(model.results, fit.prep.fun=NULL, n.core=1, ...){
   list(
     train=function(d, idx, i){
-      models <- lapply(model.results, function(m) m[[i]]$fit) %>% setNames(names(model.results))
+      registerDoMC(n.core)
+      models <- lapply(model.results, function(m){
+        if ('fit' %in% names(m)) m$fit
+        else m[[i]]$fit
+      }) %>% setNames(names(model.results))
       class(models) <- "caretList"
       fit <- caretStack(models, ...)
       if (!is.null(fit.prep.fun))

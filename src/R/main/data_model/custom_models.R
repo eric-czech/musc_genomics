@@ -150,7 +150,17 @@ GetSCRDAModel <- function(max.delta=3, var.imp=T){
       
       alpha <- seq(0, 0.99, len=param$len)
       delta <- seq(0, max.delta, len=param$len)
-      m <- rda::rda(x, y, alpha=alpha, delta=delta, genelist = T)
+      
+      tryCatch({
+        m <- rda::rda(x, y, alpha=alpha, delta=delta, genelist = T, regularization='R')  
+        # Using regularization='R' here avoids an error like "error code 1 from Lapack routine 'dgesdd'"
+        # that occurs with regularization='S' (the default)
+      }, error=function(e){
+        warning('An error occurred during SCRDA fitting.  Opening browser now...')
+        browser()
+        stop('An error occurred during SCRDA fit')
+      })
+      
       m$x.names <- x.names
       m$x.train <- x
       m$y.train <- y
@@ -171,12 +181,17 @@ GetSCRDAModel <- function(max.delta=3, var.imp=T){
       transform <- function(pred) {
         dimnames(pred) <- unname(dimnames(pred))
         dimnames(pred)[[2]] <- modelFit$obsLevels
-        pred[is.na(pred)] <- 0
+        n.lvl <- length(modelFit$obsLevel)
+        na.ind <- is.na(pred)
+        if (any(na.ind)) warning(paste(
+          'Found NA values in predicted probabilities from SCRDA model',
+          '(defaulting to equal probability for each outcome class instead)'
+        ))
+        pred[apply(na.ind, 1, any),] <- rep(1/n.lvl, n.lvl)
         pred
       }
       get.predictions(modelFit, newdata, submodels, 'posterior', transform)
     },
-    #varImp = ,
     predictors = function(x, ...) {
       browser()
       rownames(x$projection)

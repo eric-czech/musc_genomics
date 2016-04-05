@@ -148,16 +148,79 @@ TransformOriginMostFrequent <- list(
   }, max.val = 5
 )
 
-GetModelsByFeatCount <- function(models, feat.ct, origin.name){
+GetModelNamesByFeatCount <- function(models, feat.ct, origin.name){
   m.subset <- sprintf('\\.%s\\.%s', feat.ct, origin.name)
   all.model.names <- unlist(lapply(names(models), function(m) names(models[[m]])))
   sub.model.names <- all.model.names[all.model.names %>% str_detect(m.subset)]
   if (length(sub.model.names) == 0)
     stop(sprintf('Failed to find models matching top feat count %s', feat.ct))
-  top.models <- foreach(m=names(models)) %do% {
+  top.models <- foreach(m=names(models), combine=c) %do% {
     m.subset <- names(models[[m]])[names(models[[m]]) %in% sub.model.names]
+    if (length(m.subset) != 1 || sum(is.na(m.subset)) > 0)
+      stop('Failed to find best subset model')
+    m.subset
+  }
+  unlist(top.models)
+}
+
+
+GetModelsByFeatCount <- function(models, feat.ct, origin.name){
+  top.model.names <- GetModelNamesByFeatCount(models, feat.ct, origin.name)
+  top.models <- foreach(m=names(models)) %do% {
+    m.subset <- names(models[[m]])[names(models[[m]]) %in% top.model.names]
     if (length(m.subset) != 1 || sum(is.na(m.subset)) > 0)
       stop('Failed to find best subset model')
     models[[m]][[m.subset]]
   } %>% setNames(names(models))
+}
+
+RunHoldoutFit <- function(trainer, models.def, d.tr, d.ho, fit.key, dat.key, dat.gen){
+  trainer$getCache()$load(fit.key, function(){
+    models <<- list()
+    for (m in names(models.def)){
+      for (m.feat in models.def[[m]]){
+        models[[m.feat$model$name]] <<- m.feat$model
+      }
+    }
+    trainer$holdout(models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, dat.gen, dat.key) 
+  })
+}
+
+RestackHoldoutFit <- function(models.by.feat.ct){
+  res <<- list()
+  for (m.feat in names(models.by.feat.ct)){
+    model.class <- str_split(m.feat, '\\.')[[1]][1]
+    if (is.null(model.class) || length(model.class) != 1)
+      stop(sprintf('Failed to parse model class from sub model name "%s"', m.feat))
+    if (!model.class %in% names(res))
+      res[[model.class]] <<- list()
+    res[[model.class]][[m.feat]] <<- models.by.feat.ct[[m.feat]]
+  }
+  res
+}
+
+ValidatePredictions <- function(models){
+  bad.models <<- c()
+  for (m in names(models)){
+    #if (m == 'svm' || m == 'scrda') next
+    for (m.feat in names(models[[m]])){
+      for (m.fold in seq_along(models[[m]][[m.feat]])){
+        model <- models[[m]][[m.feat]][[m.fold]]
+        if ('caretStack' %in% class(model$fit))
+          next # Ignore ensemble models
+        pred <- model$fit$pred
+        if (is.null(pred)){
+          msg <- sprintf('Predictions NULL for model "%s", subset "%s", fold "%s"', m, m.feat, m.fold)
+          stop(msg)
+        }
+        
+        if (any(is.na(pred))){
+          msg <- sprintf('Found NAs in prediction matrix for model "%s", subset "%s", fold "%s"', m, m.feat, m.fold)
+          bad.models <<- c(bad.models, msg)
+        }
+      }
+    }
+  }
+  if (length(bad.models) > 0)
+    stop(sprintf('The following models + folds had NA prediction values:\n\t%s', paste(bad.models, collapse='\n\t')))
 }

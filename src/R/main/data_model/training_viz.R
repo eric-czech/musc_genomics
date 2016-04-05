@@ -3,7 +3,7 @@ source('data_model/training_lib.R')
 lib('stringr')
 lib('ggplot2')
 lib('reshape2')
-
+lib('RColorBrewer')
 
 
 GetCVScalarStats <- function(cv.res){
@@ -218,16 +218,28 @@ GetAggregateFilterCVRes <- function(models, metrics=c('kappa', 'cacc', 'acc')){
 #' @return ggplot 
 #' @seealso 
 PlotFeatureCountProfile <- function(cv.res.agg, metric){
+  
   n.feat.all <- sort(unique(cv.res.agg$n.feats))
+  n.model <- length(unique(cv.res.agg$model))
+  n.solid <- floor(n.model / 2)
+  n.dash <- n.model - n.solid
+  legend.guide <- guide_legend(title='Model Name')
+  
   cv.res.agg %>% 
     rename_(value=metric) %>%
     group_by(model, n.feats) %>% mutate(mean_value=mean(value)) %>% ungroup %>%
     mutate(i.feats=factor(n.feats, ordered=T)) %>% 
     ggplot + 
-    geom_line(aes(x=as.integer(i.feats), y=mean_value, color=model), alpha=.3) +
-    geom_smooth(aes(x=as.integer(i.feats), y=mean_value), method='loess', level=1-1E-9) +
+    geom_line(aes(x=as.integer(i.feats), y=mean_value, color=model, linetype=model), lwd=.75, alpha=.5) +
+    geom_smooth(aes(x=as.integer(i.feats), y=mean_value), color='black', method='loess', level=1-1E-9) +
     scale_x_continuous(labels=as.character(n.feat.all), breaks=1:length(n.feat.all)) +
-    scale_color_discrete(guide=guide_legend(title='Model Name')) + 
+    scale_color_manual(
+      values = c(brewer.pal(n.solid, "Set1"), brewer.pal(n.dash, "Set1")),
+      guide=legend.guide
+    ) + scale_linetype_manual(
+      values = c(rep("solid", n.solid), rep("dotted", n.dash)),
+      guide=legend.guide
+    ) +
     theme_bw() + theme(
       panel.grid.minor=element_blank(), 
       panel.grid.major.y = element_blank(),
