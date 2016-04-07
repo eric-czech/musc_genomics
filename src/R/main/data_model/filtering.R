@@ -28,8 +28,8 @@ lib('plotly')
 SEED <- 1024
 
 ## Choose dataset to use for modeling (must pick one of the following)
-EnableCosmic()
-#EnableCtd()
+#EnableCosmic()
+EnableCtd()
 
 # TRAINER_DATA_DIRNAME <- 'filtering_data'
 TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
@@ -363,7 +363,7 @@ model.cor %>% group_by(m1, m2) %>%
   xlab('Model') + ylab('Model')
 
 cv.res.all %>% filter(n.feats==20) %>% group_by(model) %>% 
-  summarise(value=mean(cacc)) %>%
+  summarise(value=mean(kappa)) %>%
   arrange(desc(value))
 
 #ens.model.names <- c('rf', 'knn', 'pam', 'svm', 'xgb')
@@ -371,22 +371,16 @@ ens.model.names <- c('rf', 'scrda', 'svm')
 
 ##### Ensemble Training #####
 
-get.ens.model.definition <- function(name, sub.models, ...){
-  lapply(n.feats, function(x){ 
-    feat.ct.models <- GetModelsByFeatCount(sub.models, x, origin.name)
-    list(model=GetEnsembleModelForTransform(x, feat.ct.models, name, ...), max.feats=x)
-  })
-}
 
 sub.models <- models[ens.model.names]
 if (any(is.na(names(sub.models))))
   stop('Failed to extract models for ensembling')
 ens.models.def <- list()
-ens.models.def$ensglm <- get.ens.model.definition(
+ens.models.def$ensglm <- GetEnsModelDefinition(
   'ensglm', sub.models, method='glm', origin.transform=origin.trans, 
   origin.name=origin.name, n.core=3
 )
-ens.models.def$ensavg <- get.ens.model.definition(
+ens.models.def$ensavg <- GetEnsModelDefinition(
   'ensavg', sub.models, method=GetEnsembleAveragingModel(), origin.transform=origin.trans, 
   origin.name=origin.name, n.core=3
 )
@@ -397,12 +391,17 @@ for (m in names(ens.models)) models[[m]] <- ens.models[[m]]
 ##### Performance #####
 
 # Create visualizations for genomics conference
-perf.plots <- cv.res.all %>% filter(model != 'pam' | n.feats > 5) %>% GeneratePerfProfileVis(RESPONSE_TYPE)
+perf.plots <- cv.res.all %>% 
+  filter((model != 'pam' | n.feats > 5) & (model != 'mars')) %>% 
+  GeneratePerfProfileVis(RESPONSE_TYPE)
 
-cv.res.model <- 'enetwt'
-cv.res <- SummarizeTrainingResults(
-  models[[cv.res.model]], T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
-)
+cv.res.model <- 'ensglm'
+get.cv.res <- function(cv.res.model){
+  SummarizeTrainingResults(
+    models[[cv.res.model]], T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
+  ) 
+}
+cv.res <- get.cv.res(cv.res.model)
 
 cv.perf.key <- paste('cv_model_perf', origin.name, sep='_')
 RESULT_CACHE$store(cv.perf.key, cv.res)
@@ -431,22 +430,25 @@ GenerateTopFeatVis(top.feat.cv) + ylim(-8, 5) + coord_flip()
 
 ##### Top Feature Subset Accuracies #####
 
-top.feat.ct <- 20
+top.feat.ct <- 30
 top.model.names <- GetModelNamesByFeatCount(models, top.feat.ct, origin.name)
 top.models <- GetModelsByFeatCount(models, top.feat.ct, origin.name)
 
 top.model.res <- SummarizeTrainingResults(
   top.models, T, fold.summary=ResSummaryFun('roc'), model.summary=ResSummaryFun('roc')
 )
-PlotFoldMetric(top.model.res, 'cacc') + 
+PlotFoldMetric(top.model.res, 'cacc', extract.model.names=T) +
+  ylab('Accuracy Over Baseline') +
   ggtitle(sprintf('%s Accuracy Over Baseline w/ %s Features', toupper(RESPONSE_TYPE), top.feat.ct)) + 
   ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/cacc_%s_feats.png', RESPONSE_TYPE, top.feat.ct))
 
-PlotFoldMetric(top.model.res, 'kappa') + 
+PlotFoldMetric(top.model.res, 'kappa', extract.model.names=T) + 
+  ylab('Kappa') +
   ggtitle(sprintf('%s Kappa w/ %s Features', toupper(RESPONSE_TYPE), top.feat.ct)) + 
   ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/kappa_%s_feats.png', RESPONSE_TYPE, top.feat.ct))
 
-PlotFoldMetric(top.model.res, 'acc') + 
+PlotFoldMetric(top.model.res, 'acc', extract.model.names=T) +
+  ylab('Raw Accuracy') +
   ggtitle(sprintf('%s Raw Accuracy w/ %s Features', toupper(RESPONSE_TYPE), top.feat.ct)) + 
   ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/acc_%s_feats.png', RESPONSE_TYPE, top.feat.ct))
 
@@ -457,32 +459,33 @@ ho.fit.key <- paste('holdout_fit', origin.name, sep='_')
 ho.dat.key <- paste('holdout_data', origin.name, sep='_')
 # trainer$getCache()$invalidate(ho.fit.key)
 # trainer$getCache()$invalidate(ho.dat.key)
-ho.fit <- RunHoldoutFit(trainer, models.def, d.tr, d.ho, ho.fit.key, ho.dat.key, ho.fold.data.gen)
+
+# Remove models that cause fitting issues in holdout
+ho.models.def <- models.def[!names(models.def) %in% c('pls')]
+
+# Create filter to remove models with irrelevant feature subset sizes
+ho.n.feat <- c(10, 20, 30, 40)
+
+ho.fit <- RunHoldoutFit(trainer, ho.models.def, d.tr, d.ho, ho.fit.key, ho.dat.key, ho.fold.data.gen, n.feat=ho.n.feat)
 ho.models <- RestackHoldoutFit(ho.fit)
 
-###### Ensemble Holdout #####
+### Ensemble Holdout ###
 
-sub.models.ho <- ho.models[ens.model.names]
-if (any(is.na(names(sub.models.ho))))
-  stop('Failed to extract models for ensembling')
-ens.ho.models.def <- list()
-ens.ho.models.def$ensglm <- get.ens.model.definition(
-  'ensglm', sub.models.ho, method='glm', origin.transform=origin.trans, origin.name=origin.name
-)
-ens.ho.models.def$ensavg <- get.ens.model.definition(
-  'ensavg', sub.models.ho, method=GetEnsembleAveragingModel(), origin.transform=origin.trans, origin.name=origin.name
-)
+ho.ens.models.def <- GetEnsembleModelDefFromSubModelFit(ho.models, ens.model.names, origin.trans, origin.name, n.feat=ho.n.feat)
 
-ens.ho.fit.key <- paste('holdout_fit_ens', origin.name, sep='_')
-# trainer$getCache()$invalidate(ens.ho.fit.key)
-ens.ho.fit <- RunHoldoutFit(trainer, ens.ho.models.def, d.tr, d.ho, ens.ho.fit.key, ho.dat.key, ho.fold.data.gen)
+ho.ens.fit.key <- paste('holdout_fit_ens', origin.name, sep='_')
+# trainer$getCache()$invalidate(ho.ens.fit.key)
+ho.ens.fit <- RunHoldoutFit(trainer, ho.ens.models.def, d.tr, d.ho, ho.ens.fit.key, ho.dat.key, ho.fold.data.gen)
+ho.ens.models <- RestackHoldoutFit(ho.ens.fit)
+for (m in names(ho.ens.models)) ho.models[[m]] <- ho.ens.models[[m]]
 
+##### Holdout Results #####
 
+ho.top.feats <- ExtractTopFeatures(ho.models)
+# ho.top.feats %>% group_by(n.feats) %>% tally
+RESULT_CACHE$store('holdout_top_feats', ho.top.feats)
 
-# Look at selected features
-ho.fit.top <- ho.fit[top.model.names]
-ho.fit.top[[1]]$fit$top.feats
-
+ho.fit.top <- GetModelsByFeatCount(ho.models, 20, origin.name)
 ho.res <- SummarizeTrainingResults(list(ho.fit.top), T, model.summary=ResSummaryFun('lift'))
 ho.perf.key <- paste('ho_model_perf', origin.name, sep='_')
 RESULT_CACHE$store(ho.perf.key, ho.res)
@@ -496,9 +499,37 @@ PlotHoldOutMetric(ho.res, 'cacc')
 PlotHoldOutMetric(ho.res, 'kappa') 
 PlotHoldOutMetric(ho.res, 'mcp') 
 
+
+#### Holdout Gain/Sensitivity Analysis
+
+ho.lift.model <- 'ensglm'
+fit <- ho.models[[ho.lift.model]][[sprintf('%s.20.wmostfreqorigin', ho.lift.model)]]
+
+# Create gain/sensitivity data for holdout set
+n.pos <- sum(fit$y.test == 'pos')
+n.pred <- length(fit$y.pred$prob)
+rocr.pred <- prediction(fit$y.pred$prob, fit$y.test)
+rocr.perf <- performance(rocr.pred, 'tpr', 'rpp') # gain chart
+d.ho.lift <- data.frame(x=rocr.perf@x.values[[1]], y=rocr.perf@y.values[[1]]) %>%
+  mutate(x=x * n.pred, y=y*n.pos) %>%
+  mutate(sensitivity=y/x) %>% 
+  filter(x > 0)
+
+# Save results above in result cache
+ho.lift.key <- sprintf('ho_lift_data_%s', ho.lift.model)
+RESULT_CACHE$store(ho.lift.key, d.ho.lift)
+# d.ho.lift <- RESULT_CACHE$load(ho.lift.key)
+
+PlotHoldoutGainFinal(d.ho.lift) +
+  ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/ho_lift_%s.png', RESPONSE_TYPE, ho.lift.model))
+
+PlotHoldoutSensitivityFinal(d.ho.lift) +
+  ggsave(sprintf('~/repos/musc_genomics/src/R/main/data_pres/images/filtering/%s/ho_sens_%s.png', RESPONSE_TYPE, ho.lift.model))
+
+
 ##### Calibration #####
 
-cal.data <- cv.res$predictions
+cal.data <- get.cv.res('ensavg')$predictions
 #cal.data <- ho.res$predictions
 cal.data %>% group_by(model) %>% do({
   d <- .
@@ -524,23 +555,79 @@ get.rectified.accuracy <- function(
       n.na <- sum(p.rec == 'na')
       n.pos <- sum(p.rec == 'pos')
       n.neg <- sum(p.rec == 'neg')
-      acc.pos <- sum(p.rec == 'pos' & y.test == 'pos')/n.pos
-      acc.neg <- sum(p.rec == 'neg' & y.test == 'neg')/n.neg
+      n.pos.correct <- sum(p.rec == 'pos' & y.test == 'pos')
+      n.neg.correct <- sum(p.rec == 'neg' & y.test == 'neg')
+      n.miss <- length(p.rec) - n.pos.correct - n.neg.correct - n.na
+      acc.pos <- n.pos.correct/n.pos
+      acc.neg <- n.neg.correct/n.neg
       acc.all <- sum(p.rec == 'pos' & y.test == 'pos') + sum(p.rec == 'neg' & y.test == 'neg')
       acc.all <- acc.all / (n.pos + n.neg)
       data.frame(
         n=length(p.rec), n.na=n.na, n.pos=n.pos, n.neg=n.neg, 
+        n.pos.correct=n.pos.correct, n.neg.correct=n.neg.correct, n.miss=n.miss,
         acc.pos=acc.pos, acc.neg=acc.neg, acc.all=acc.all,
         p.lo=p.lo, p.hi=p.hi
       )
     }
 }
 
-fit <- ho.fit$xgb.10.worigin
+data.frame(pred=fit$y.pred$prob, true=fit$y.test) %>%
+  mutate(bin=cut(pred, breaks=seq(0, 1, by=.25))) %>%
+  group_by(bin) %>% summarise(acc=sum(true == 'pos')/n(), n=n())
+
 ho.acc.rec <- get.rectified.accuracy(
   fit$y.pred$prob, fit$y.test,
-  p.lo.seq=.3, p.hi.seq=.7
+  p.lo.seq=seq(.08, .4, by=.01), p.hi.seq=seq(.55, .92, by=.01)
 )
+
+ho.acc.rec %>% filter(abs(p.lo + p.hi - 1) < .001) %>%
+  mutate(window=.5 - p.lo) %>%
+  mutate(window=sprintf('.5 +/- %s', str_pad(window, 4, pad='0', side='right'))) %>%
+  mutate(n.miss=n - n.pos.correct - n.neg.correct) %>%
+  mutate(pct.na=n.na/n) %>%
+  select(pct.na, acc.pos, acc.neg, window) %>%
+  melt(id.vars=c('window')) %>%
+  ggplot(aes(x=factor(window), y=value, color=variable)) + geom_point() +
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+
+##### True Out-of-sample Predictions #####
+
+uk.fold.data.gen <- GetFeatScoringFoldGen(PREPROC, RESPONSE_THRESH, feat.limit=5000, n.core=1)
+uk.fit.key <- paste('unknown_fit', origin.name, sep='_')
+uk.dat.key <- paste('unknown_data', origin.name, sep='_')
+# trainer$getCache()$invalidate(uk.fit.key)
+# trainer$getCache()$invalidate(uk.dat.key)
+
+# Remove models that cause fitting issues in holdout
+uk.models.def <- models.def[!names(models.def) %in% c('pls')]
+#uk.models.def <- models.def[names(models.def) %in% c('svm')]
+
+# Create filter to remove models with irrelevant feature subset sizes
+uk.n.feat <- c(10, 20, 30, 40)
+
+d.tr.uk <- list(X=rbind(d.tr$X, d.ho$X), y=c(d.tr$y, d.ho$y))
+d.ho.uk <- list(X=d.predict[,names(d.tr.uk$X)], y=rep(0, nrow(d.predict)))
+uk.fit <- RunHoldoutFit(trainer, uk.models.def, d.tr.uk, d.ho.uk, uk.fit.key, uk.dat.key, uk.fold.data.gen, n.feat=uk.n.feat)
+uk.models <- RestackHoldoutFit(uk.fit)
+
+### Unknown Label Prediction Ensembles ####
+uk.ens.models.def <- GetEnsembleModelDefFromSubModelFit(uk.models, ens.model.names, origin.trans, origin.name, n.feat=uk.n.feat)
+uk.ens.fit.key <- paste('unknown_fit_ens', origin.name, sep='_')
+# trainer$getCache()$invalidate(uk.ens.fit.key)
+uk.ens.fit <- RunHoldoutFit(trainer, uk.ens.models.def, d.tr.uk, d.ho.uk, uk.ens.fit.key, uk.dat.key, uk.fold.data.gen)
+uk.ens.models <- RestackHoldoutFit(uk.ens.fit)
+for (m in names(uk.ens.models)) uk.models[[m]] <- uk.ens.models[[m]]
+
+##### Prediction Export #####
+
+uk.top.feats <- ExtractTopFeatures(uk.models)
+# uk.top.feats %>% group_by(n.feats) %>% tally
+RESULT_CACHE$store('unknown_top_feats', uk.top.feats)
+
+uk.models$ensglm$ensglm.20.wmostfreqorigin
 
 ##### Simple Filter Models #####
 

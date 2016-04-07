@@ -6,6 +6,32 @@ lib('reshape2')
 lib('RColorBrewer')
 
 
+
+GetModelNameMap <- function(){
+  c(
+    'enet'='Elastic Net',
+    'enetwt'='Weighted Elastic Net',
+    'mars'='MV Regression Splines',
+    'gbm'='Boosted Trees',
+    'rf'='Random Forest',
+    'knn'='Nearest Neighbors',
+    'sda'='Shrinkage Discriminant Analysis',
+    'svm'='Radial SVM',
+    'xgb'='XGBoost Trees',
+    'pls'='Partial Least Squares',
+    'pam'='Predictive Analysis for Microarrays',
+    'hdrda'='High-Dimensional Regularized DA',
+    'scrda'='Shrunken Centroid Regularized DA',
+    'ensglm'='Ensemble (GLM)',
+    'ensavg'='Ensemble (Average)'
+  )
+}
+
+GetModelNameTransform <- function(){
+  model.map <- GetModelNameMap()
+  function(m) ifelse(m %in% names(model.map), model.map[m], m)
+}
+
 GetCVScalarStats <- function(cv.res){
   cv.res$fold.summary %>% group_by(model, fold) %>%
     summarise_each(funs(head(., 1)), -model) %>% ungroup
@@ -61,17 +87,25 @@ PlotFoldConfusion <- function(cv.res){
     ggtitle('Confusion Matrix Distributions')
 }
 
-PlotFoldMetric <- function(cv.res, metric, order.by.score=T){
+PlotFoldMetric <- function(cv.res, metric, order.by.score=T, extract.model.names=F){
   p <- GetCVScalarStats(cv.res) %>% 
     rename_(value=metric)
-  if (order.by.score)
+  if (extract.model.names){
+    trans <- GetModelNameTransform()
+    p <- p %>%
+      mutate(model=trans(str_extract(model, '^.*?(?=\\.)')))
+  }
+  if (order.by.score){
     p <- p %>% mutate(model=factor(model)) %>%
       mutate(model=reorder(model, value, FUN = median))
-  p %>%
+  }
+  p <- p %>%
     ggplot(aes(x=model, y=value, color=model)) +
-    geom_boxplot() + coord_flip() + theme_bw() + ylab(metric) + 
+    geom_boxplot() + coord_flip() + theme_bw() + 
+    ylab(metric) + xlab('Model') +
     scale_colour_discrete(guide = FALSE) +
     ggtitle(sprintf('CV %s Estimates', metric))
+  p
 }
 
 PlotPerFoldROC <- function(cv.res){
@@ -246,5 +280,29 @@ PlotFeatureCountProfile <- function(cv.res.agg, metric){
       panel.grid.major.x = element_line(size=.1)
     )
     #theme(panel.grid.minor=element_blank(), panel.grid.major=element_blank())
+}
+
+PlotHoldoutGainFinal <- function(d.ho.lift){
+  max.x <- max(d.ho.lift$x)
+  d.ho.lift %>%
+    ggplot(aes(x=x, y=y)) + geom_line(color='#336633', size=1, alpha=.5) +
+    theme_bw() + theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=.5)) +
+    xlab('Number of Predictions Used') +
+    ylab('Number of Actually Sensitive Samples') +
+    geom_abline(intercept=0, slope=n.pos/n.pred, color='#CC3333', size=1, alpha=.5) +
+    geom_abline(intercept=0, slope=1, color='#0066CC', size=1, alpha=.5) + 
+    scale_x_continuous(breaks=seq(0, max.x, by=4)) +
+    coord_cartesian(xlim=c(0, n.pred), ylim=c(0, n.pos), expand = FALSE) 
+}
+
+PlotHoldoutSensitivityFinal <- function(d.ho.lift){
+  max.x <- max(d.ho.lift$x)
+  d.ho.lift %>%
+    ggplot(aes(x=x, y=sensitivity)) + geom_line() +
+    scale_x_continuous(breaks = seq(0, max.x, by=4)) +
+    scale_y_continuous(labels=scales::percent) + 
+    theme_bw() + theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust=.5)) +
+    xlab('Number of Predictions Used') +
+    ylab('% of Predictions Actually Sensitive') 
 }
 

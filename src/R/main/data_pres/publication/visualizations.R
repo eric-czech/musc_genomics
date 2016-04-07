@@ -1,27 +1,4 @@
 
-GetModelNameMap <- function(){
-  c(
-    'enet'='Elastic Net',
-    'enetwt'='Weighted Elastic Net',
-    'gbm'='Boosted Trees',
-    'rf'='Random Forest',
-    'knn'='Nearest Neighbors',
-    'sda'='Shrinkage Discriminant Analysis',
-    'svm'='Radial SVM',
-    'xgb'='XGBoost Trees',
-    'pls'='Partial Least Squares',
-    'pam'='Predictive Analysis for Microarrays',
-    'hdrda'='High-Dimensional Regularized DA',
-    'scrda'='Shrunken Centroid Regularized DA',
-    'ensglm'='Ensemble (GLM)',
-    'ensavg'='Ensemble (Average)'
-  )
-}
-
-GetModelNameTransform <- function(){
-  model.map <- GetModelNameMap()
-  function(m) ifelse(m %in% names(model.map), model.map[m], m)
-}
 
 GetModelLineTypeTransform <- function(){
   function(x){
@@ -34,7 +11,7 @@ GetModelLineTypeTransform <- function(){
 GeneratePerfProfileVis <- function(
     cv.res.all, response.type, 
     img.dir='~/repos/musc_genomics/src/R/main/data_pres/images/publication/genomics_conf',
-    ignore.models=c('nnet')
+    ignore.models=c('nnet'), scale=1.5, dpi=600
   ){
   
   d.plt <- cv.res.all %>% 
@@ -55,21 +32,21 @@ GeneratePerfProfileVis <- function(
     xlab('Number of Features Included') +
     ylab('Accuracy') +
     ggtitle(sprintf('Accuracy (%s)', toupper(response.type))) + 
-    ggsave(sprintf('%s/%s/acc.png', img.dir, response.type))
+    ggsave(sprintf('%s/%s/acc.png', img.dir, response.type), scale=scale, dpi=dpi)
   
   p.cacc <- d.plt %>%
     PlotFeatureCountProfile(metric='cacc') +
     xlab('Number of Features Included') +
     ylab('Accuracy Over Baseline') +
     ggtitle(sprintf('Accuracy Over Baseline (%s)', toupper(response.type))) + 
-    ggsave(sprintf('%s/%s/cacc.png', img.dir, response.type))
+    ggsave(sprintf('%s/%s/cacc.png', img.dir, response.type), scale=scale, dpi=dpi)
   
   p.kappa <- d.plt %>%
     PlotFeatureCountProfile(metric='kappa') +
     xlab('Number of Features Included') +
     ylab('Kappa Statistic') +
     ggtitle(sprintf('Kappa (%s)', toupper(response.type))) + 
-    ggsave(sprintf('%s/%s/kappa.png', img.dir, response.type))
+    ggsave(sprintf('%s/%s/kappa.png', img.dir, response.type), scale=scale, dpi=dpi)
   
   list(p.acc, p.cacc, p.kappa)
 }
@@ -94,3 +71,4 @@ GenerateTopFeatVis <- function(top.feat.cv){
     theme_bw() + scale_color_brewer(guide=guide_legend(title='Was Sensitive'), palette="Set1") +
     xlab('Feature Name') + ylab('Feature Value') 
 }
+

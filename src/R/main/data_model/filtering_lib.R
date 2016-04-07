@@ -174,12 +174,69 @@ GetModelsByFeatCount <- function(models, feat.ct, origin.name){
   } %>% setNames(names(models))
 }
 
-RunHoldoutFit <- function(trainer, models.def, d.tr, d.ho, fit.key, dat.key, dat.gen){
+GetEnsModelDefinition <- function(name, sub.models, n.feat=NULL, ...){
+  n.feat <- if (is.null(n.feat)) n.feats else n.feat
+  lapply(n.feat, function(x){ 
+    feat.ct.models <- GetModelsByFeatCount(sub.models, x, origin.name)
+    list(model=GetEnsembleModelForTransform(x, feat.ct.models, name, ...), max.feats=x)
+  })
+}
+
+GetEnsembleModelDefFromSubModelFit <- function(models, ens.model.names, origin.trans, origin.name, n.feat=NULL){
+  sub.models <- models[ens.model.names]
+  if (any(is.na(names(sub.models))))
+    stop(sprintf('Failed to some or all of the following models for ensembling: %s', paste(ens.model.names, collapse=', ')))
+  ens.models.def <- list()
+  ens.models.def$ensglm <- GetEnsModelDefinition(
+    'ensglm', sub.models, method='glm', 
+    origin.transform=origin.trans, origin.name=origin.name, n.feat=n.feat
+  )
+  ens.models.def$ensavg <- GetEnsModelDefinition(
+    'ensavg', sub.models, method=GetEnsembleAveragingModel(), 
+    origin.transform=origin.trans, origin.name=origin.name, n.feat=n.feat
+  )
+  ens.models.def
+}
+
+ExtractTopFeatures <- function(models){
+  # Extract the first model in the results to use as the representative from
+  # which the top feature list will be drawn (at the top level, each list item
+  # will correspond to per-feature results for one ML algo, e.g. svm).  Note
+  # this this feature list, given any number of those features, will be the 
+  # same for all models
+  rep.model <- models[[1]]
+  
+  # Loop through all the per-feature-count model results contained in the
+  # representative model list and extract the feature names associated with
+  # that feature subset size
+  res <- lapply(rep.model, function(m) {
+    feats <- m$fit$top.feats
+    data.frame(feature=feats, n.feats=length(feats))
+  }) %>% do.call(rbind, .)
+  
+  if (!is.data.frame(res) || nrow(res) == 0)
+    stop('Extracted feature set is not a data frame or is empty')
+  rownames(res) <- NULL
+  
+  n.invalid <- res %>% group_by(n.feats) %>% tally %>% filter(n.feats != n) %>% nrow
+  if (n.invalid > 0)
+    stop('At least one extracted feature subset did not have the expected number of feature names')
+  
+  res
+}
+
+RunHoldoutFit <- function(trainer, models.def, d.tr, d.ho, fit.key, dat.key, dat.gen, n.feat=NULL){
   trainer$getCache()$load(fit.key, function(){
-    models <<- list()
+    models <- list()
     for (m in names(models.def)){
       for (m.feat in models.def[[m]]){
-        models[[m.feat$model$name]] <<- m.feat$model
+        m.name <- m.feat$model$name
+        m.n.feat <- as.numeric(str_split(m.name, '\\.')[[1]][2])
+        if (is.na(m.n.feat))
+          stop(sprintf('Failed to parse number of features from model name "%s"', m.name))
+        if (!is.null(n.feat) && !m.n.feat %in% n.feat)
+          next
+        models[[m.feat$model$name]] <- m.feat$model
       }
     }
     trainer$holdout(models, d.tr$X, d.tr$y, d.ho$X, d.ho$y, dat.gen, dat.key) 
@@ -187,20 +244,20 @@ RunHoldoutFit <- function(trainer, models.def, d.tr, d.ho, fit.key, dat.key, dat
 }
 
 RestackHoldoutFit <- function(models.by.feat.ct){
-  res <<- list()
+  res <- list()
   for (m.feat in names(models.by.feat.ct)){
     model.class <- str_split(m.feat, '\\.')[[1]][1]
     if (is.null(model.class) || length(model.class) != 1)
       stop(sprintf('Failed to parse model class from sub model name "%s"', m.feat))
     if (!model.class %in% names(res))
-      res[[model.class]] <<- list()
-    res[[model.class]][[m.feat]] <<- models.by.feat.ct[[m.feat]]
+      res[[model.class]] <- list()
+    res[[model.class]][[m.feat]] <- models.by.feat.ct[[m.feat]]
   }
   res
 }
 
 ValidatePredictions <- function(models){
-  bad.models <<- c()
+  bad.models <- c()
   for (m in names(models)){
     #if (m == 'svm' || m == 'scrda') next
     for (m.feat in names(models[[m]])){
@@ -216,7 +273,7 @@ ValidatePredictions <- function(models){
         
         if (any(is.na(pred))){
           msg <- sprintf('Found NAs in prediction matrix for model "%s", subset "%s", fold "%s"', m, m.feat, m.fold)
-          bad.models <<- c(bad.models, msg)
+          bad.models <- c(bad.models, msg)
         }
       }
     }
