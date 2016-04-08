@@ -30,8 +30,8 @@ lib('plotly')
 SEED <- 1024
 
 ## Choose dataset to use for modeling (must pick one of the following)
-EnableCosmic()
-#EnableCtd()
+#EnableCosmic()
+EnableCtd()
 
 # TRAINER_DATA_DIRNAME <- 'filtering_data'
 TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
@@ -416,7 +416,7 @@ PlotHoldoutSensitivityFinal(d.ho.lift) +
 
 ##### Calibration #####
 
-cal.data <- get.cv.res('ensavg')$predictions
+cal.data <- get.cv.res('rf')$predictions
 #cal.data <- ho.res$predictions
 cal.data %>% group_by(model) %>% do({
   d <- .
@@ -439,28 +439,47 @@ uk.models.def <- models.def[!names(models.def) %in% c('pls')]
 # Create filter to remove models with irrelevant feature subset sizes
 uk.n.feat <- GetUnlabeledFeatCt()
 
+# Append cross-validation data to holdout data as the training data set for unknown samples
 d.tr.uk <- list(X=rbind(d.tr$X, d.ho$X), y=c(d.tr$y, d.ho$y))
+# Create the true "holdout" dataset on unlabeled data (with arbitrary response values since 
+# performance measures taken against those response will be ignored)
 d.ho.uk <- list(X=d.predict[,names(d.tr.uk$X)], y=rep(0, nrow(d.predict)))
+
+# Refit all models on all labeled samples, and use those fit models to make predictions
+# for samples with no known label
 uk.fit <- RunHoldoutFit(trainer, uk.models.def, d.tr.uk, d.ho.uk, uk.fit.key, uk.dat.key, uk.fold.data.gen, n.feat=uk.n.feat)
 uk.models <- RestackHoldoutFit(uk.fit)
 
 ## Unknown Label Prediction Ensembles ##
+
+# Create ensemble model definitions using the base models already fit above
 uk.ens.models.def <- GetEnsembleModelDefFromSubModelFit(uk.models, GetEnsembleModelNames(), origin.trans, origin.name, n.feat=uk.n.feat)
+
 uk.ens.fit.key <- paste('unknown_fit_ens', origin.name, sep='_')
 # trainer$getCache()$invalidate(uk.ens.fit.key)
+
+# Train ensemble models for unlabeled samples
 uk.ens.fit <- RunHoldoutFit(trainer, uk.ens.models.def, d.tr.uk, d.ho.uk, uk.ens.fit.key, uk.dat.key, uk.fold.data.gen)
 uk.ens.models <- RestackHoldoutFit(uk.ens.fit)
 for (m in names(uk.ens.models)) uk.models[[m]] <- uk.ens.models[[m]]
 
 ## Save top features ##
+
+# Extract the features selected when training over the entire known, labeled dataset for this source
 uk.top.feats <- ExtractTopFeatures(uk.models)
 # uk.top.feats %>% group_by(n.feats) %>% tally
-RESULT_CACHE$store('unknown_top_feats', uk.top.feats)
+RESULT_CACHE$store('unknown_top_feats', uk.top.feats) # Store the top feature data frame for later use
 
 ##### Identify Out-of-Sample Novelties #####
 
+# Generate a vector containing the names of the top features chosen over all labeled samples
 uk.subset.feats <- uk.top.feats %>% filter(n.feats == GetOptimalFeatCt()) %>% .$feature
+
+# Create novelty/anomaly training dataset using top features 
 X.tr.nov <- d.tr.uk$X[,uk.subset.feats] %>% select(-origin) 
+
+# Create dataset for which anomaly predictions will be made (this includes all samples
+# with no known label)
 X.ho.nov <- d.ho.uk$X[,uk.subset.feats] %>% select(-origin)
 
 # Collect novelty info based on tumor origin
@@ -490,7 +509,12 @@ uk.meta <- uk.ho.origin.ind %>%
 # Aggregate top features across all modeling rounds
 all.top.feats <- GetTopFeatures(RESULT_CACHE, GetOptimalFeatCt())
 
+# Extract the models fit across all labeled samples that also pertain only
+# to the feature subset size of interest
 pred.models <- GetModelsByFeatCount(uk.models, GetOptimalFeatCt(), origin.name)
+
+# For each model selected above, extract the respective predictions on unlabeled
+# samples and aggregate all of those predictions (from each model into a single data frame)
 pred.exp <- lapply(names(pred.models), function(m){
   model <- pred.models[[m]]
   if (!length(model$fit$top.feats) == GetOptimalFeatCt()) stop(sprintf(
@@ -503,10 +527,15 @@ pred.exp <- lapply(names(pred.models), function(m){
 pred.exp <- do.call(cbind, pred.exp)
 if (any(is.na(pred.exp))) stop('Found NA values in final predictions')
 
+# Calculate the most frequently predicted class for each unlabeled sample
 avg.pred.class <- pred.exp %>% select(ends_with('class')) %>% 
   apply(1, function(x) names(sort(table(x),decreasing=TRUE))[1])
+
+# Calculate the average predicted probability of sensitivity for each unlabeled sample
 avg.pred.prob <- pred.exp %>% select(ends_with('prob')) %>% apply(1, mean)
 
+# Attach the most frequently predicted classes and average probabilities to the prediction
+# data frame assembled so far 
 pred.exp <- pred.exp %>% mutate(overall.class=avg.pred.class, overall.prob=avg.pred.prob)
 
 # Plot correlation in predicted probabilities across all models
@@ -515,7 +544,9 @@ pred.exp <- pred.exp %>% mutate(overall.class=avg.pred.class, overall.prob=avg.p
 #   ggplot(aes(x=Var1, y=Var2, fill=value)) + geom_tile() +
 #   theme(axis.text.x = element_text(angle=25, hjust=1))
 
-
+# Attaches the metadata associated with each unlabeled sample (including the likelihood of those
+# samples being significantly different from known training data) to the prediction information from
+# each model and saves the resulting information in a CSV file
 save.predictions <- function(metadata, predictions, type, sort.model='ensglm'){
   exp.file <- sprintf(
     '~/repos/musc_genomics/data/predictions/%s/unknown_sample_%s_predictions.csv', 
@@ -527,6 +558,8 @@ save.predictions <- function(metadata, predictions, type, sort.model='ensglm'){
   write.csv(exp.data, file=exp.file, row.names=F)
   exp.data
 }
+
+# Create and save separate data frames for both the predicted classes and probabilities of each unlabeled sample
 pred.exp.prob <- save.predictions(uk.meta, pred.exp, 'prob')
 pred.exp.class <- save.predictions(uk.meta, pred.exp, 'class')
 
