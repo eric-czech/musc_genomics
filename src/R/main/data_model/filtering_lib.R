@@ -209,20 +209,31 @@ ExtractTopFeatures <- function(models){
   # Loop through all the per-feature-count model results contained in the
   # representative model list and extract the feature names associated with
   # that feature subset size
-  res <- lapply(rep.model, function(m) {
-    feats <- m$fit$top.feats
-    data.frame(feature=feats, n.feats=length(feats))
-  }) %>% do.call(rbind, .)
+  res <- lapply(names(rep.model), function(m.feat) {
+    n.feat <- as.integer(str_split(m.feat, '\\.')[[1]][2])
+    if (is.na(n.feat))
+      stop(sprintf('Failed to parse feature count from model name "%s"', m.feat))
+    m.feat <- rep.model[[m.feat]]
+    if ('fit' %in% names(m.feat))
+      m.feat <- list(m.feat)
+    lapply(seq_along(m.feat), function(m.fold){
+      data.frame(feature=m.feat[[m.fold]]$fit$top.feats  , n.feats=n.feat, fold=m.fold)
+    })
+  }) 
+  res <- do.call(rbind, unlist(res, recursive=F))
   
   if (!is.data.frame(res) || nrow(res) == 0)
     stop('Extracted feature set is not a data frame or is empty')
   rownames(res) <- NULL
   
-  n.invalid <- res %>% group_by(n.feats) %>% tally %>% filter(n.feats != n) %>% nrow
+  n.invalid <- res %>% group_by(n.feats, fold) %>% tally %>% 
+    # Special case for n.feats == 0 is necessary because when that is true,
+    # two "bias" (i.e. random) features were actually present
+    filter(n.feats != n & (n.feats != 0 | n != 2)) %>% nrow
   if (n.invalid > 0)
     stop('At least one extracted feature subset did not have the expected number of feature names')
   
-  res
+  res %>% mutate(feature=as.character(feature))
 }
 
 RunHoldoutFit <- function(trainer, models.def, d.tr, d.ho, fit.key, dat.key, dat.gen, n.feat=NULL){
@@ -256,16 +267,35 @@ RestackHoldoutFit <- function(models.by.feat.ct){
   res
 }
 
-ValidatePredictions <- function(models){
+ValidatePredictions <- function(models, ignore.models=NULL){
   bad.models <- c()
   for (m in names(models)){
-    #if (m == 'svm' || m == 'scrda') next
+    if (!is.null(ignore.models) && m %in% ignore.models)
+      next
     for (m.feat in names(models[[m]])){
-      for (m.fold in seq_along(models[[m]][[m.feat]])){
-        model <- models[[m]][[m.feat]][[m.fold]]
-        if ('caretStack' %in% class(model$fit))
-          next # Ignore ensemble models
+      m.feat.cv <- models[[m]][[m.feat]]
+      if ('fit' %in% names(m.feat.cv))
+        m.feat.cv <- list(m.feat.cv)
+      for (m.fold in seq_along(m.feat.cv)){
+        model <- m.feat.cv[[m.fold]]
+        
+        # If model is an ensemble, verify that the predictions used by sub models
+        # of that ensemble (ie the training data) do not have NA values
+        if ('caretStack' %in% class(model$fit)){
+          pred <- model$fit$ens_model$trainingData
+          if (is.null(pred)) stop(sprintf(
+              'Ensemble training data NULL for model "%s", subset "%s", fold "%s"', m, m.feat, m.fold
+          ))
+          if (any(is.na(pred))) stop(sprintf(
+              'Ensemble model training data contains NA values for model "%s", subset "%s", fold "%s"', 
+              m, m.feat, m.fold
+          ))
+          next
+        }
+        
+        # If the model is not an ensemble, validate its resampled prediction data frame directly
         pred <- model$fit$pred
+        
         if (is.null(pred)){
           msg <- sprintf('Predictions NULL for model "%s", subset "%s", fold "%s"', m, m.feat, m.fold)
           stop(msg)
@@ -280,4 +310,35 @@ ValidatePredictions <- function(models){
   }
   if (length(bad.models) > 0)
     stop(sprintf('The following models + folds had NA prediction values:\n\t%s', paste(bad.models, collapse='\n\t')))
+  loginfo('Predictions from the following models have been successfully validated: %s', paste(names(models), collapse=', '))
+}
+
+#' @title Get top features selected across CV, holdout, and unlabeled data models
+GetTopFeatures <- function(res.cache, top.feat.ct){
+  
+  # Get top features (and their frequencies) selected in CV
+  cv.top.feats.exp <- res.cache$load('cv_top_feats') %>% 
+    filter(n.feats==top.feat.ct) %>% select(cv.feature=feature, cv.fold=fold)
+  
+  # Get top features in holdout models
+  ho.top.feats.exp <- res.cache$load('holdout_top_feats') %>% 
+    filter(n.feats==top.feat.ct) %>% select(ho.feature=feature, ho.fold=fold)
+  
+  # Get top features in unlabeled data models (i.e. models trained on all available labeled data)
+  uk.top.feats.exp <- res.cache$load('unknown_top_feats') %>% 
+    filter(n.feats==top.feat.ct) %>% select(uk.feature=feature, uk.fold=fold)
+  
+  # Return a full outer join on all feature sets
+  all.top.feats <- cv.top.feats.exp %>% group_by(cv.feature) %>% 
+    tally %>% ungroup %>% setNames(c('cv.feature', 'cv.n')) %>%
+    full_join(ho.top.feats.exp, by=c('cv.feature'='ho.feature')) %>%
+    full_join(uk.top.feats.exp, by=c('cv.feature'='uk.feature')) %>%
+    mutate(selected.in.ho=!is.na(ho.fold), selected.in.uk=!is.na(uk.fold), cv.n=ifelse(is.na(cv.n), 0, cv.n)) %>%
+    select(feature=cv.feature, cv.frequency=cv.n, selected.in.ho, selected.in.uk) %>%
+    arrange(desc(cv.frequency))
+  
+  # Verify that no features will be lost above:
+  # full_join(data.frame(a=c(1,2,3), b=c(1,1,1)), data.frame(ax=c(1,3,4), b=c(1,1,1)), by=c('a'='ax'))
+  
+  all.top.feats
 }
