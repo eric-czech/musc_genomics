@@ -30,8 +30,8 @@ lib('plotly')
 SEED <- 1024
 
 ## Choose dataset to use for modeling (must pick one of the following)
-#EnableCosmic()
-EnableCtd()
+EnableCosmic()
+#EnableCtd()
 
 # TRAINER_DATA_DIRNAME <- 'filtering_data'
 TRAINER_DATA_DIRNAME <- 'filtering_data.ga'
@@ -49,7 +49,7 @@ select <- dplyr::select
 ##### Data Loading #####
 
 # Load training data for this response type
-d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3)
+d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mutations=3) %>% select(-tissue)
 
 # Frequency of origin
 # table(TransformOriginMostFrequent$convert(d.prep[,'origin'])) %>% prop.table
@@ -58,7 +58,7 @@ d.prep <- GetTrainingData(TRAIN_CACHE, RESPONSE_TYPE, RESPONSE_SELECTOR, min.mut
 # table(DichotomizeOutcome(d.prep[,'response'], RESPONSE_THRESH))
 
 # Load a dataset equivalent to the above but with missing response labels (ultimately to be predicted)
-d.predict <- GetPredictionData(TRAIN_CACHE, RESPONSE_TYPE, PREDICTION_SELECTOR, names(d.prep))
+d.predict <- GetPredictionData(TRAIN_CACHE, RESPONSE_TYPE, PREDICTION_SELECTOR, names(d.prep)) %>% select(-tissue)
 
 if (!all(names(d.prep) == names(d.predict)))
   stop('Column names in training data do not equal those in dataset to be predicted')

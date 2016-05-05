@@ -18,9 +18,13 @@ GetRawData <- function(){
   
   # Join everything together and return merged result
   d <- d.biop %>% 
+    # Add CTD and COSMIC data
     left_join(d.ctd2, by='tumor_id') %>% 
     left_join(d.cosmic, by='tumor_id') %>%
-    select(tumor_id, origin, ic_50, auc, everything())
+    # Replace NA tissue values which at TOW, were only present for COSMIC
+    mutate(tissue=ifelse(is.na(tissue), 'UNKNOWN', tissue)) %>% 
+    # Rearrange columns in result
+    select(tumor_id, origin, tissue, ic_50, auc, everything()) 
 }
 
 # d.biop <- GetBioPortalData()

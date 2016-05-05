@@ -248,16 +248,18 @@ GetCOSMICData <- function(){
     # Read in downloaded data frame
     read.csv(file.path, sep=',', stringsAsFactors=F) %>% 
       # Rename necessary fields
-      select(tumor_id=Cell.Line, ic_50=ABT.263_IC_50) %>% 
+      select(tumor_id=Cell.Line, ic_50=ABT.263_IC_50, tissue=Tissue) %>% 
       # Convert IC 50 to numeric and replace hyphens in Cell Line ID (w/o hyphens, they match HUGO)
       mutate(
         ic_50 = suppressWarnings(as.numeric(ic_50)), 
-        tumor_id=str_replace_all(tumor_id, '\\-', '')
+        tumor_id=str_replace_all(tumor_id, '\\-', ''),
+        tissue=str_trim(toupper(tissue))
       ) %>% 
       # Remove any rows with IC 50 NA
       filter(!is.na(ic_50))
   }
   # Lazy-load these results (they're expensive to compute), saving them
   # on disk or loading from disk if previously created
-  RAW_CACHE$load('cosmic_v1', loader)
+  # RAW_CACHE$load('cosmic_v1', loader) # Pre-tissue field addition
+  RAW_CACHE$load('cosmic_v2', loader)
 }

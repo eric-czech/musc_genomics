@@ -65,7 +65,8 @@ GetTrainingData <- function(cache, response.type, response.selector, min.mutatio
       stop('Dataset contains unexpected NA values')
     d.prep
   }
-  cache$load(sprintf('data_prep_02_%s', response.type), loader)
+  # cache$load(sprintf('data_prep_02_%s', response.type), loader) # Pre-tissue field addition
+  cache$load(sprintf('data_prep_03_%s', response.type), loader)
 }
 
 GetPredictionData <- function(cache, response.type, response.selector, cols){
@@ -82,7 +83,8 @@ GetPredictionData <- function(cache, response.type, response.selector, cols){
     }
     d.prep
   }
-  cache$load(sprintf('data_predict_02_%s', response.type), loader)
+  # cache$load(sprintf('data_predict_02_%s', response.type), loader) # Pre tissue field addition
+  cache$load(sprintf('data_predict_03_%s', response.type), loader)
 }
 
 DichotomizeOutcome <- function(y, threshold) {

@@ -79,8 +79,8 @@ GetPreparedData <- function(cache, raw.data=NULL, min.mutations=3){
     # Return results
     list(data=d, fields=list(copy_number=c.cn, gene_expression=c.ge, mutations=c.mu))
   }
-  cache$load('data_prep_01', loader)
-  #FetchFromDisk('data_prep_01', loader) 
+  # cache$load('data_prep_01', loader) # Pre-tissue field addition
+  cache$load('data_prep_02', loader)
 }
 
 GetFeatures <- function(d, type){
