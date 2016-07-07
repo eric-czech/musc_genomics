@@ -7,7 +7,7 @@ See http://www.genenames.org/ for more details
 import pandas as pd
 
 
-HUGO_URL = 'https://s3-us-west-2.amazonaws.com/eric.a.czech/Public/musc_genomics/hugo_genes.csv'
+HUGO_URL = 'http://s3-us-west-2.amazonaws.com/eric.a.czech/Public/musc_genomics/hugo_genes.csv'
 
 
 def get_huge_genes():

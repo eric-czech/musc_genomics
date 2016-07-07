@@ -78,7 +78,7 @@ GetGeneticProfileData <- function(gene.symbols, genetic.profile, chunk.size=50){
     
     
     # Verify that tumor IDs from each chunk are equivalent.  This is necessary to
-    # make sure that non only does the data for each chunk have the same dimensions
+    # make sure that not only does the data for each chunk have the same dimensions
     # but also that the tumor IDs are sorted in the same order
     ids.equal <- foreach(i=1:(length(data)-1), .combine=c) %do% {
       all.equal(data[[i]]$tumor_id, data[[i+1]]$tumor_id)
