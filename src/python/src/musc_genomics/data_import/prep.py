@@ -89,15 +89,13 @@ def get_gene_mutation_features(g):
     res = pd.Series(np.repeat(1, len(mu)), index=['AAC:' + gene + ':' + m for m in mu])
 
     # Add features indicating frequency of each mutation type
-    # (note that the gene id itself is not associated with these counts so
-    # that they may become specific to the tumor id / case, but not the individual genes)
     ct = g['MUTATION_TYPE'].value_counts()
-    ct.index = ['TYP:' + x for x in ct.index]
+    ct.index = ['TYP:' + gene + ':' + x for x in ct.index]
     res = res.append(ct)
 
     # Similarly, add the frequency of each impact score value
     ct = g['IMPACT_SCORE'].value_counts()
-    ct.index = ['IMP:' + x for x in ct.index]
+    ct.index = ['IMP:' + gene + ':' + x for x in ct.index]
     res = res.append(ct)
 
     # Rename the resulting axes

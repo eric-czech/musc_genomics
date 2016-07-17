@@ -5,10 +5,8 @@ See http://www.cbioportal.org/web_api.jsp for more details.
 """
 import pandas as pd
 from py_utils.collection_utils import to_batches
-from urllib.error import HTTPError
 import logging
 import time
-from IPython.core.debugger import Tracer
 logger = logging.getLogger(__name__)
 
 CCLE_CANCER_STUDY = 'cellline_ccle_broad'
@@ -37,6 +35,10 @@ def _is_id(idv):
 
 
 def _is_iterable(seq, check_empty=True):
+    # Ensure sequence is not a string, which is technically iterable
+    # but not desired in this context
+    if isinstance(seq, str):
+        return False
     try:
         _ = (e for e in seq)
         if check_empty and len(seq) == 0:
