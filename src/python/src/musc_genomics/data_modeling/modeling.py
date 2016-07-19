@@ -47,19 +47,22 @@ def get_modeling_data(d_cosmic, d_cgds, drug_names, drug_unit='IC_50'):
     return d
 
 
-def prep_modeling_data(d, response):
+def prep_modeling_data(d, response=None):
 
-    mask = d[response].isnull()
-    if np.any(mask):
-        logger.warning(
-            'Removing {} records due to missing response value (response = "{}")'\
-            .format(mask.sum(), response)
-        )
-        d = d[~mask.values]
+    if response is not None:
+        mask = d[response].isnull()
+        if np.any(mask):
+            logger.warning(
+                'Removing {} records due to missing response value (response = "{}")'\
+                .format(mask.sum(), response)
+            )
+            d = d[~mask.values]
 
     # Isolate drug concentration fields not related to target response
     c_res = d.filter(regex='^RES:').columns.tolist()
-    c_res = [c for c in c_res if c != response]
+
+    if response is not None:
+        c_res = [c for c in c_res if c != response]
 
     # Ensure that all non-response fields are non-null
     assert np.all(d[[c for c in d if c not in c_res]].notnull()), \
