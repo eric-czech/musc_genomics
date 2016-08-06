@@ -70,13 +70,17 @@ def prep_modeling_data(d, response=None):
 
     # Apply mean value imputation to all non-target response fields
     d_res = d.copy()
+
+    imp_summary = {}
     imputers = {}
     for c in c_res:
+        imp_summary[c] = d_res[c].isnull().value_counts()
         imputers[c] = Imputer().fit(d_res[[c]])
         d_res[c] = imputers[c].transform(d_res[[c]])[:, 0]
+    imp_summary = pd.DataFrame(imp_summary)
     d_res.response_feature_imputers = imputers
 
     # Ensure no values are NA at this point
     assert np.all(d_res.notnull())
 
-    return d_res
+    return d_res, imp_summary

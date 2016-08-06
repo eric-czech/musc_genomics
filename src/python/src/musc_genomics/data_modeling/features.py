@@ -130,8 +130,11 @@ def fill_na_values(d):
 
     # Get all mutation features containing NA values
     ct = d_na.filter(regex='^MU:').sum(axis=0)
-    fill_summary = get_feature_type_counts(ct[ct > 0].index)
-    c_fill = ct[ct > 0].index.values
+    ct = ct[ct > 0]
+    fill_summary = get_feature_type_counts(ct.index)
+    fill_summary = pd.concat([get_feature_type_counts(d.columns), fill_summary], axis=1)
+    fill_summary.columns = ['NumFeatures', 'NumFilled']
+    c_fill = ct.index.values
 
     # Replace missing mutation feature values with 0
     d_fill = d.copy()

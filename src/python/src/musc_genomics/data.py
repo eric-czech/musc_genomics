@@ -13,5 +13,5 @@ def exists(datatype, dataset):
     return common.PROJ_MANAGER.exists(datatype, dataset)
 
 
-def load(datatype, dataset, raise_on_absent=True):
-    return common.PROJ_MANAGER.load(datatype, dataset, raise_on_absent=raise_on_absent)
+def load(datatype, dataset):
+    return common.PROJ_MANAGER.load(datatype, dataset)
