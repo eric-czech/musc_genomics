@@ -150,3 +150,23 @@ def fill_na_values(d):
         raise AssertionError(msg)
 
     return d_fill, fill_summary
+
+
+def remove_sparse_responses(d, threshold=.25):
+    """
+    Removes response values that don't meet a certain threshold for NA values
+    :param d: Modeling data frame
+    :param threshold: Maximum percentage of cases to allow NA values for
+    :return:
+    """
+    d_res = d.filter(regex='^RES:')
+    cts = d_res.isnull().mean()
+
+    ax = cts.hist()
+    ax.set_title('NA Count Distribution Across Responses')
+
+    # Set fields to remove as those with at least {threshold}% null values
+    c_rm = cts[cts >= threshold].index.values
+
+    print('Removing {} response fields of {} due to sparsity'.format(len(c_rm), len(cts)))
+    return d.drop(c_rm, axis=1)

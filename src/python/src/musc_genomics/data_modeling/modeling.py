@@ -47,7 +47,7 @@ def get_modeling_data(d_cosmic, d_cgds, drug_names, drug_unit='IC_50'):
     return d
 
 
-def prep_modeling_data(d, response=None):
+def prep_modeling_data(d, response=None, impute=True):
 
     if response is not None:
         mask = d[response].isnull()
@@ -76,11 +76,15 @@ def prep_modeling_data(d, response=None):
     for c in c_res:
         imp_summary[c] = d_res[c].isnull().value_counts()
         imputers[c] = Imputer().fit(d_res[[c]])
-        d_res[c] = imputers[c].transform(d_res[[c]])[:, 0]
+        if impute:
+            d_res[c] = imputers[c].transform(d_res[[c]])[:, 0]
     imp_summary = pd.DataFrame(imp_summary)
     d_res.response_feature_imputers = imputers
 
     # Ensure no values are NA at this point
-    assert np.all(d_res.notnull())
+    if impute:
+        assert np.all(d_res.notnull())
+    else:
+        assert np.all(d_res[[c for c in d_res if c not in c_res]].notnull())
 
     return d_res, imp_summary

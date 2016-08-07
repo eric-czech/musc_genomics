@@ -4,11 +4,12 @@ from musc_genomics import data
 from musc_genomics.data_modeling import modeling, features
 
 
-def get_modeling_data_01(encoding_set):
+def get_modeling_data_01(encoding_set, impute_response=True):
     """
     Returns modeling data with preset operations for preparation
 
     :param encoding_set: Name of feature encoding set to load
+    :param impute_response: Whether or not to mean-impute response fields
     :return: Modeling data (no NA values)
     """
     d = data.load('features', 'encode_{}'.format(encoding_set))
@@ -21,7 +22,7 @@ def get_modeling_data_01(encoding_set):
     d_fill = pd.concat([d_feat, d_res], axis=1)
     assert d_fill.shape == d.shape
 
-    d_fill, imp_summary = modeling.prep_modeling_data(d_fill)
+    d_fill, imp_summary = modeling.prep_modeling_data(d_fill, impute=impute_response)
 
     return d_fill, na_summary, fill_summary, imp_summary
 

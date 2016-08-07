@@ -33,14 +33,22 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="features.py" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/features.py">
+      <file leaf-file-name="modeling.py" pinned="false" current-in-tab="false">
+        <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/modeling.py">
           <provider selected="true" editor-type-id="text-editor">
             <state vertical-scroll-proportion="0.0">
-              <caret line="136" column="15" selection-start-line="136" selection-start-column="15" selection-end-line="136" selection-end-column="15" />
-              <folding>
-                <element signature="e#2#21#0" expanded="true" />
-              </folding>
+              <caret line="86" column="9" selection-start-line="86" selection-start-column="9" selection-end-line="86" selection-end-column="9" />
+              <folding />
+            </state>
+          </provider>
+        </entry>
+      </file>
+      <file leaf-file-name="features.py" pinned="false" current-in-tab="true">
+        <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/features.py">
+          <provider selected="true" editor-type-id="text-editor">
+            <state vertical-scroll-proportion="0.5174825">
+              <caret line="154" column="44" selection-start-line="154" selection-start-column="44" selection-end-line="154" selection-end-column="44" />
+              <folding />
             </state>
           </provider>
         </entry>
@@ -49,7 +57,7 @@
         <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/prepared.py">
           <provider selected="true" editor-type-id="text-editor">
             <state vertical-scroll-proportion="0.0">
-              <caret line="18" column="40" selection-start-line="18" selection-start-column="40" selection-end-line="18" selection-end-column="40" />
+              <caret line="24" column="84" selection-start-line="24" selection-start-column="84" selection-end-line="24" selection-end-column="84" />
               <folding>
                 <element signature="e#1#20#0" expanded="true" />
               </folding>
@@ -57,27 +65,11 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="README.md" pinned="false" current-in-tab="false">
-        <entry file="file://$PROJECT_DIR$/musc_genomics/data_import/README.md">
-          <provider selected="true" editor-type-id="split-provider[text-editor;MarkdownPreviewEditor]">
-            <state split_layout="FIRST">
-              <first_editor vertical-scroll-proportion="0.0">
-                <caret line="0" column="0" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
-                <folding />
-              </first_editor>
-              <second_editor />
-            </state>
-          </provider>
-          <provider editor-type-id="MarkdownFxPreviewEditor">
-            <state />
-          </provider>
-        </entry>
-      </file>
       <file leaf-file-name="common.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/musc_genomics/common.py">
           <provider selected="true" editor-type-id="text-editor">
             <state vertical-scroll-proportion="0.0">
-              <caret line="6" column="30" selection-start-line="6" selection-start-column="30" selection-end-line="6" selection-end-column="30" />
+              <caret line="42" column="31" selection-start-line="42" selection-start-column="31" selection-end-line="42" selection-end-column="31" />
               <folding>
                 <element signature="e#1#37#0" expanded="true" />
               </folding>
@@ -119,11 +111,11 @@
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="cosmic.py" pinned="false" current-in-tab="true">
+      <file leaf-file-name="cosmic.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/musc_genomics/data_import/cosmic.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state vertical-scroll-proportion="0.12587413">
-              <caret line="6" column="0" selection-start-line="6" selection-start-column="0" selection-end-line="6" selection-end-column="0" />
+            <state vertical-scroll-proportion="0.0">
+              <caret line="16" column="56" selection-start-line="16" selection-start-column="56" selection-end-line="16" selection-end-column="56" />
               <folding>
                 <element signature="e#1#20#0" expanded="true" />
               </folding>
@@ -160,14 +152,14 @@
         <option value="$PROJECT_DIR$/musc_genomics/import/cgds.py" />
         <option value="$PROJECT_DIR$/musc_genomics/data_import/hugo.py" />
         <option value="$PROJECT_DIR$/musc_genomics/data_import/api.py" />
-        <option value="$PROJECT_DIR$/musc_genomics/data_import/cosmic.py" />
         <option value="$PROJECT_DIR$/musc_genomics/data_import/prep.py" />
         <option value="$PROJECT_DIR$/musc_genomics/data_import/cgds.py" />
-        <option value="$PROJECT_DIR$/musc_genomics/data_modeling/modeling.py" />
-        <option value="$PROJECT_DIR$/musc_genomics/data_modeling/prepared.py" />
-        <option value="$PROJECT_DIR$/musc_genomics/data_modeling/features.py" />
-        <option value="$PROJECT_DIR$/musc_genomics/common.py" />
         <option value="$PROJECT_DIR$/musc_genomics/data.py" />
+        <option value="$PROJECT_DIR$/musc_genomics/data_import/cosmic.py" />
+        <option value="$PROJECT_DIR$/musc_genomics/common.py" />
+        <option value="$PROJECT_DIR$/musc_genomics/data_modeling/prepared.py" />
+        <option value="$PROJECT_DIR$/musc_genomics/data_modeling/modeling.py" />
+        <option value="$PROJECT_DIR$/musc_genomics/data_modeling/features.py" />
       </list>
     </option>
   </component>
@@ -449,16 +441,6 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/musc_genomics/data_import/cosmic.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.0">
-          <caret line="6" column="0" selection-start-line="6" selection-start-column="0" selection-end-line="6" selection-end-column="0" />
-          <folding>
-            <element signature="e#1#20#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/musc_genomics/data_import/api.py">
       <provider selected="true" editor-type-id="text-editor">
         <state vertical-scroll-proportion="0.0">
@@ -494,7 +476,7 @@
         <state vertical-scroll-proportion="0.0">
           <caret line="131" column="32" selection-start-line="131" selection-start-column="32" selection-end-line="131" selection-end-column="32" />
           <folding>
-            <element signature="e#2#21#0" expanded="true" />
+            <element signature="e#2#21#0" expanded="false" />
           </folding>
         </state>
       </provider>
@@ -832,26 +814,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/modeling.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.0">
-          <caret line="85" column="29" selection-start-line="85" selection-start-column="29" selection-end-line="85" selection-end-column="29" />
-          <folding>
-            <element signature="e#1#20#0" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/features.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.0">
-          <caret line="136" column="15" selection-start-line="136" selection-start-column="15" selection-end-line="136" selection-end-column="15" />
-          <folding>
-            <element signature="e#2#21#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/musc_genomics/data_import/README.md">
       <provider editor-type-id="text-editor">
         <state vertical-scroll-proportion="0.0">
@@ -902,16 +864,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/musc_genomics/common.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.0">
-          <caret line="6" column="30" selection-start-line="6" selection-start-column="30" selection-end-line="6" selection-end-column="30" />
-          <folding>
-            <element signature="e#1#37#0" expanded="true" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/../../../../portfolio/functional/ml/python/research/project/manager.py">
       <provider selected="true" editor-type-id="text-editor">
         <state vertical-scroll-proportion="0.0">
@@ -930,23 +882,57 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/prepared.py">
+    <entry file="file://$USER_HOME$/anaconda/envs/research3.5/lib/python3.5/site-packages/pandas/io/excel.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state vertical-scroll-proportion="-0.06573427">
+          <caret line="74" column="4" selection-start-line="74" selection-start-column="4" selection-end-line="74" selection-end-column="4" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/musc_genomics/data_import/cosmic.py">
       <provider selected="true" editor-type-id="text-editor">
         <state vertical-scroll-proportion="0.0">
-          <caret line="18" column="40" selection-start-line="18" selection-start-column="40" selection-end-line="18" selection-end-column="40" />
+          <caret line="16" column="56" selection-start-line="16" selection-start-column="56" selection-end-line="16" selection-end-column="56" />
           <folding>
             <element signature="e#1#20#0" expanded="true" />
           </folding>
         </state>
       </provider>
     </entry>
-    <entry file="file://$PROJECT_DIR$/musc_genomics/data_import/cosmic.py">
+    <entry file="file://$PROJECT_DIR$/musc_genomics/common.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.12587413">
-          <caret line="6" column="0" selection-start-line="6" selection-start-column="0" selection-end-line="6" selection-end-column="0" />
+        <state vertical-scroll-proportion="0.0">
+          <caret line="42" column="31" selection-start-line="42" selection-start-column="31" selection-end-line="42" selection-end-column="31" />
+          <folding>
+            <element signature="e#1#37#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/prepared.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state vertical-scroll-proportion="0.0">
+          <caret line="24" column="84" selection-start-line="24" selection-start-column="84" selection-end-line="24" selection-end-column="84" />
           <folding>
             <element signature="e#1#20#0" expanded="true" />
           </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/modeling.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state vertical-scroll-proportion="0.0">
+          <caret line="86" column="9" selection-start-line="86" selection-start-column="9" selection-end-line="86" selection-end-column="9" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/musc_genomics/data_modeling/features.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state vertical-scroll-proportion="0.5174825">
+          <caret line="154" column="44" selection-start-line="154" selection-start-column="44" selection-end-line="154" selection-end-column="44" />
+          <folding />
         </state>
       </provider>
     </entry>
