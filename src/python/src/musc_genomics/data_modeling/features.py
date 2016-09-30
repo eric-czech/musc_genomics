@@ -170,3 +170,16 @@ def remove_sparse_responses(d, threshold=.25):
 
     print('Removing {} response fields of {} due to sparsity'.format(len(c_rm), len(cts)))
     return d.drop(c_rm, axis=1)
+
+
+def filter_responses(d, drug_names):
+    """
+    Removes response/drug features not matching the given drug names (any non-response features are left intact)
+    :param d: Data frame containing response data (may contain more fields than just responses)
+    :param drug_names: List of drugs to filter to
+    :return: DataFrame like d with unnecessary response fields removed
+    """
+    pattern = '|'.join(drug_names)
+    c_other = [c for c in d if not c.startswith('RES:')]
+    c_drug = d.filter(regex='^RES:.*({}).*$'.format(pattern)).columns.tolist()
+    return d[c_other + c_drug]

@@ -5,6 +5,8 @@ import os
 import re
 
 
+SEED = 3377
+
 ALPHANUM = re.compile('[^a-zA-Z0-9]')
 
 DATA_DIR = os.path.expanduser('~/data/research/musc_genomics')
